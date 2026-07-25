@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebView2 Web Side - Dynamic Width/Height Styling</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #F8FAFC;
+            color: #0F172A;
+            overflow-x: hidden;
+        }
+
+        body {
+            padding: 24px;
+        }
+
+        .container {
+            width: 100%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Perfectly aligned header */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            height: 32px;
+            margin-bottom: 20px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #E2E8F0;
+            width: 100%;
+        }
+
+        .badge {
+            background-color: #0EA5E9;
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 12px;
+            text-transform: uppercase;
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #1E293B;
+            line-height: 32px;
+        }
+
+        /* Outer Input Card */
+        .input-card {
+            background-color: #FFFFFF;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            border: 1px solid #E2E8F0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .label-title {
+            align-self: flex-start;
+            font-size: 14px;
+            font-weight: 600;
+            color: #334155;
+            height: 20px;
+            line-height: 20px;
+            margin-bottom: 12px;
+        }
+
+        /* Dynamic Input / Textarea Element */
+        #dynamicInput {
+            width: 450px;
+            height: 150px;
+            padding: 10px 14px;
+            font-size: 15px;
+            color: #0F172A;
+            background-color: #FFFFFF;
+            border-width: 2px;
+            border-style: solid;
+            border-color: #3B82F6;
+            border-radius: 8px;
+            outline: none;
+            resize: none; /* Disables manual drag resize */
+            box-sizing: border-box;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        #dynamicInput:focus {
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25);
+        }
+
+        /* Specs Panel */
+        .specs-panel {
+            margin-top: 20px;
+            background-color: #F1F5F9;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 12px;
+            color: #475569;
+            font-family: Consolas, monospace;
+            width: 100%;
+        }
+
+        .spec-item {
+            margin-bottom: 4px;
+            height: 18px;
+            line-height: 18px;
+        }
+        .spec-item:last-child {
+            margin-bottom: 0;
+        }
+        .spec-val {
+            font-weight: bold;
+            color: #2563EB;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="badge">Web View</span>
+            <h2>HTML / CSS Dynamic Renderer</h2>
+        </div>
+
+        <div class="input-card">
+            <div class="label-title">Live HTML Textbox Element:</div>
+            
+            <textarea id="dynamicInput" placeholder="Type here to sync text with WPF..." oninput="onInputTextChanged(this.value)"></textarea>
+
+            <div class="specs-panel">
+                <div class="spec-item">border-style: <span id="lblStyle" class="spec-val">solid</span></div>
+                <div class="spec-item">border-width: <span id="lblThickness" class="spec-val">2px</span></div>
+                <div class="spec-item">width: <span id="lblWidth" class="spec-val">450px</span></div>
+                <div class="spec-item">height: <span id="lblHeight" class="spec-val">150px</span></div>
+                <div class="spec-item">border-color: <span id="lblColor" class="spec-val">#3B82F6</span></div>
+                <div class="spec-item">border-radius: <span id="lblRadius" class="spec-val">8px</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const inputElem = document.getElementById('dynamicInput');
+
+        // Update styling properties from WPF controller
+        function updateStyleProperties(borderStyle, thicknessPx, widthPx, heightPx, colorHex, radiusPx) {
+            inputElem.style.borderStyle = borderStyle;
+            inputElem.style.borderWidth = thicknessPx + 'px';
+            inputElem.style.width = widthPx + 'px';
+            inputElem.style.height = heightPx + 'px';
+            inputElem.style.borderColor = colorHex;
+            inputElem.style.borderRadius = radiusPx + 'px';
+
+            document.getElementById('lblStyle').textContent = borderStyle;
+            document.getElementById('lblThickness').textContent = thicknessPx + 'px';
+            document.getElementById('lblWidth').textContent = widthPx + 'px';
+            document.getElementById('lblHeight').textContent = heightPx + 'px';
+            document.getElementById('lblColor').textContent = colorHex;
+            document.getElementById('lblRadius').textContent = radiusPx + 'px';
+        }
+
+        // Send text updates Web -> WPF
+        function onInputTextChanged(text) {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                    type: 'textChange',
+                    text: text
+                });
+            }
+        }
+
+        // Receive text updates WPF -> Web
+        if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', event => {
+                const data = event.data;
+                if (data && data.type === 'textChange') {
+                    if (inputElem.value !== data.text) {
+                        inputElem.value = data.text;
+                    }
+                } else if (data && data.type === 'styleChange') {
+                    updateStyleProperties(data.borderStyle, data.thickness, data.width, data.height, data.color, data.radius);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
