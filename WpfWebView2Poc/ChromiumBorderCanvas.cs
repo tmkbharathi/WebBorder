@@ -6,9 +6,10 @@ namespace WpfWebView2Poc
 {
     /// <summary>
     /// Custom WPF Control implementing Chromium Blink's complete C++ border rendering engine.
-    /// Perfectly handles solid, dashed, and dotted borders across all thickness levels and corner radii:
-    /// - T < rOuter: Smooth rounded path dots (complete round circles).
-    /// - T >= rOuter or rOuter == 0: Border Ring Clip Mask (rInner = Max(0, rOuter - T)) producing exact Chromium teardrop corner dots.
+    /// Handles solid, dashed, and dotted borders across all thickness levels and corner radii:
+    /// - Dashed with rOuter == 0: 4 solid L-shaped corner caps (arm = 1.5T) + Chromium exact numDashes = round((Dim - 4T) / 3T) math.
+    /// - Dashed with rOuter > 0: Skia-aligned perimeter dash scaling with 1:1 ratio & round stroke caps.
+    /// - Dotted: Unified Chromium dotted architecture matching CSS Level 3 spec.
     /// </summary>
     public class ChromiumBorderCanvas : FrameworkElement
     {
@@ -79,17 +80,17 @@ namespace WpfWebView2Poc
             double halfT = t / 2.0;
             Rect strokeRect = new Rect(halfT, halfT, Math.Max(0, w - t), Math.Max(0, h - t));
 
-            // Case 2: Dashed Border
+            // Case 2: Dashed Border (Chromium Blink C++ Algorithm)
             if (BorderStyle == "dashed")
             {
                 Geometry borderRingClip = CreateChromiumBorderRingGeometry(w, h, t, rOuter, rInner);
                 dc.PushClip(borderRingClip);
-                DrawChromiumDashedBorder(dc, brush, strokeRect, t, rOuter);
+                DrawChromiumDashedBorder(dc, brush, strokeRect, w, h, t, rOuter);
                 dc.Pop();
                 return;
             }
 
-            // Case 3: Dotted Border (Chromium Blink C++ Rendering Engine)
+            // Case 3: Dotted Border (Chromium Blink C++ Algorithm)
             if (BorderStyle == "dotted")
             {
                 if (rOuter > 0 && t < rOuter)
@@ -106,6 +107,146 @@ namespace WpfWebView2Poc
                     dc.PushClip(borderRingClip);
                     DrawChromiumSharpDottedBorder(dc, brush, strokeRect, t);
                     dc.Pop();
+                }
+            }
+        }
+
+        private Geometry CreateChromiumBorderRingGeometry(double w, double h, double t, double rOuter, double rInner)
+        {
+            Rect outerRect = new Rect(0, 0, w, h);
+            RectangleGeometry outerGeo = new RectangleGeometry(outerRect, rOuter, rOuter);
+
+            double innerW = Math.Max(0, w - 2 * t);
+            double innerH = Math.Max(0, h - 2 * t);
+
+            if (innerW <= 0 || innerH <= 0)
+            {
+                return outerGeo; // Solid block
+            }
+
+            Rect innerRect = new Rect(t, t, innerW, innerH);
+            RectangleGeometry innerGeo = new RectangleGeometry(innerRect, rInner, rInner);
+
+            return new CombinedGeometry(GeometryCombineMode.Exclude, outerGeo, innerGeo);
+        }
+
+        private void DrawChromiumDashedBorder(DrawingContext dc, Brush brush, Rect rect, double w, double h, double t, double rOuter)
+        {
+            Pen pen = new Pen(brush, t)
+            {
+                StartLineCap = PenLineCap.Flat,
+                EndLineCap = PenLineCap.Flat
+            };
+
+            if (rOuter > 0)
+            {
+                // Rounded dashed path matching Chromium Skia
+                double rMid = Math.Max(0, rOuter - t / 2.0);
+                double straightX = Math.Max(0, w - 2 * rOuter);
+                double straightY = Math.Max(0, h - 2 * rOuter);
+                double perimeter = 2 * straightX + 2 * straightY + 2 * Math.PI * rMid;
+
+                double idealCycle = 3.0 * t;
+                int k = Math.Max(1, (int)Math.Round(perimeter / idealCycle));
+                double actualCycle = perimeter / k;
+
+                double dashLen = actualCycle * (2.0 / 3.0);
+                double gapLen = actualCycle * (1.0 / 3.0);
+
+                Pen dashedPen = new Pen(brush, t)
+                {
+                    DashCap = PenLineCap.Round,
+                    StartLineCap = PenLineCap.Round,
+                    EndLineCap = PenLineCap.Round,
+                    DashStyle = new DashStyle(new double[] { dashLen / t, gapLen / t }, 0)
+                };
+
+                dc.DrawRoundedRectangle(null, dashedPen, rect, rMid, rMid);
+                return;
+            }
+
+            // Sharp 90-degree corners (r == 0): Chromium Blink 4-Corner L-Cap + Centered Edge Dashes
+            double arm = 1.5 * t; // Dynamic corner L-arm length scaling with thickness (1.5 * T)
+
+            double left = rect.Left;
+            double top = rect.Top;
+            double right = rect.Right;
+            double bottom = rect.Bottom;
+
+            // 1. Draw 4 Corner L-Dashes extending to outer boundaries (0, w, h) for sharp 90-degree mitered right angles
+            // Top-Left L
+            dc.DrawLine(pen, new Point(0, top), new Point(arm, top));
+            dc.DrawLine(pen, new Point(left, 0), new Point(left, arm));
+
+            // Top-Right L
+            dc.DrawLine(pen, new Point(w - arm, top), new Point(w, top));
+            dc.DrawLine(pen, new Point(right, 0), new Point(right, arm));
+
+            // Bottom-Right L
+            dc.DrawLine(pen, new Point(w - arm, bottom), new Point(w, bottom));
+            dc.DrawLine(pen, new Point(right, h - arm), new Point(right, h));
+
+            // Bottom-Left L
+            dc.DrawLine(pen, new Point(0, bottom), new Point(arm, bottom));
+            dc.DrawLine(pen, new Point(left, h - arm), new Point(left, h));
+
+            // 2. Top & Bottom Edge Dashes (Chromium exact numDashes = round((W - 4T) / 3T) math)
+            double gx = w - 3.0 * t; // Available space between 2 corner L-arms (from 1.5T to W - 1.5T)
+            if (gx > 0)
+            {
+                int numDashes = Math.Max(0, (int)Math.Round((w - 4.0 * t) / (3.0 * t)));
+
+                if (numDashes > 0)
+                {
+                    double idealDash = 2.0 * t;
+                    double actualDash = Math.Min(idealDash, (gx * 0.6) / numDashes);
+                    double remGapSpace = gx - numDashes * actualDash;
+                    double actualGap = remGapSpace / (numDashes + 1);
+
+                    Point topStart = new Point(arm, top);
+                    Point bottomStart = new Point(arm, bottom);
+                    Vector dir = new Vector(1, 0);
+
+                    for (int i = 0; i < numDashes; i++)
+                    {
+                        Point startPoint = topStart + dir * (actualGap + i * (actualDash + actualGap));
+                        Point endPoint = startPoint + dir * actualDash;
+                        dc.DrawLine(pen, startPoint, endPoint);
+
+                        Point startPointB = bottomStart + dir * (actualGap + i * (actualDash + actualGap));
+                        Point endPointB = startPointB + dir * actualDash;
+                        dc.DrawLine(pen, startPointB, endPointB);
+                    }
+                }
+            }
+
+            // 3. Left & Right Edge Dashes (Chromium exact numDashes = round((H - 4T) / 3T) math)
+            double gy = h - 3.0 * t; // Available space between 2 corner L-arms (from 1.5T to H - 1.5T)
+            if (gy > 0)
+            {
+                int numDashes = Math.Max(0, (int)Math.Round((h - 4.0 * t) / (3.0 * t)));
+
+                if (numDashes > 0)
+                {
+                    double idealDash = 2.0 * t;
+                    double actualDash = Math.Min(idealDash, (gy * 0.6) / numDashes);
+                    double remGapSpace = gy - numDashes * actualDash;
+                    double actualGap = remGapSpace / (numDashes + 1);
+
+                    Point leftStart = new Point(left, arm);
+                    Point rightStart = new Point(right, arm);
+                    Vector dirV = new Vector(0, 1);
+
+                    for (int j = 0; j < numDashes; j++)
+                    {
+                        Point startPointL = leftStart + dirV * (actualGap + j * (actualDash + actualGap));
+                        Point endPointL = startPointL + dirV * actualDash;
+                        dc.DrawLine(pen, startPointL, endPointL);
+
+                        Point startPointR = rightStart + dirV * (actualGap + j * (actualDash + actualGap));
+                        Point endPointR = startPointR + dirV * actualDash;
+                        dc.DrawLine(pen, startPointR, endPointR);
+                    }
                 }
             }
         }
@@ -136,115 +277,6 @@ namespace WpfWebView2Poc
             };
 
             dc.DrawRoundedRectangle(null, dottedPen, rect, rMid, rMid);
-        }
-
-        private Geometry CreateChromiumBorderRingGeometry(double w, double h, double t, double rOuter, double rInner)
-        {
-            Rect outerRect = new Rect(0, 0, w, h);
-            RectangleGeometry outerGeo = new RectangleGeometry(outerRect, rOuter, rOuter);
-
-            double innerW = Math.Max(0, w - 2 * t);
-            double innerH = Math.Max(0, h - 2 * t);
-
-            if (innerW <= 0 || innerH <= 0)
-            {
-                return outerGeo; // Solid block
-            }
-
-            Rect innerRect = new Rect(t, t, innerW, innerH);
-            RectangleGeometry innerGeo = new RectangleGeometry(innerRect, rInner, rInner);
-
-            return new CombinedGeometry(GeometryCombineMode.Exclude, outerGeo, innerGeo);
-        }
-
-        private void DrawChromiumDashedBorder(DrawingContext dc, Brush brush, Rect rect, double t, double rOuter)
-        {
-            Pen pen = new Pen(brush, t)
-            {
-                StartLineCap = PenLineCap.Flat,
-                EndLineCap = PenLineCap.Flat
-            };
-
-            if (rOuter > 0)
-            {
-                // Rounded dashed path matching Chromium Skia
-                pen.DashStyle = new DashStyle(new double[] { 3.0, 1.5 }, 0);
-                pen.DashCap = PenLineCap.Round;
-                double rMid = Math.Max(0, rOuter - t / 2.0);
-                dc.DrawRoundedRectangle(null, pen, rect, rMid, rMid);
-                return;
-            }
-
-            // Sharp 90-degree corners (r == 0): Chromium Blink 4-Corner L-Cap + Side Dashes
-            double arm = 1.5 * t;
-
-            double left = rect.Left;
-            double top = rect.Top;
-            double right = rect.Right;
-            double bottom = rect.Bottom;
-
-            // 1. Draw 4 Corner L-Dashes
-            dc.DrawLine(pen, new Point(left, top), new Point(left + arm, top));
-            dc.DrawLine(pen, new Point(left, top), new Point(left, top + arm));
-
-            dc.DrawLine(pen, new Point(right - arm, top), new Point(right, top));
-            dc.DrawLine(pen, new Point(right, top), new Point(right, top + arm));
-
-            dc.DrawLine(pen, new Point(right - arm, bottom), new Point(right, bottom));
-            dc.DrawLine(pen, new Point(right, bottom - arm), new Point(right, bottom));
-
-            dc.DrawLine(pen, new Point(left, bottom), new Point(left + arm, bottom));
-            dc.DrawLine(pen, new Point(left, bottom - arm), new Point(left, bottom));
-
-            // 2. Top & Bottom Edge Dashes
-            double lx = (right - arm) - (left + arm);
-            if (lx > 0)
-            {
-                double idealDash = 3.0 * t;
-                double idealGap = 3.0 * t;
-                double cycle = idealDash + idealGap;
-
-                int numDashes = Math.Max(0, (int)Math.Round(lx / cycle));
-                if (numDashes > 0)
-                {
-                    double actualCycle = lx / numDashes;
-                    double dashLen = actualCycle * 0.5;
-                    double gapLen = actualCycle * 0.5;
-
-                    for (int i = 0; i < numDashes; i++)
-                    {
-                        double startX = (left + arm) + i * actualCycle + gapLen / 2.0;
-                        double endX = startX + dashLen;
-                        dc.DrawLine(pen, new Point(startX, top), new Point(endX, top));
-                        dc.DrawLine(pen, new Point(startX, bottom), new Point(endX, bottom));
-                    }
-                }
-            }
-
-            // 3. Left & Right Edge Dashes
-            double ly = (bottom - arm) - (top + arm);
-            if (ly > 0)
-            {
-                double idealDash = 3.0 * t;
-                double idealGap = 3.0 * t;
-                double cycle = idealDash + idealGap;
-
-                int numDashes = Math.Max(0, (int)Math.Round(ly / cycle));
-                if (numDashes > 0)
-                {
-                    double actualCycle = ly / numDashes;
-                    double dashLen = actualCycle * 0.5;
-                    double gapLen = actualCycle * 0.5;
-
-                    for (int j = 0; j < numDashes; j++)
-                    {
-                        double startY = (top + arm) + j * actualCycle + gapLen / 2.0;
-                        double endY = startY + dashLen;
-                        dc.DrawLine(pen, new Point(left, startY), new Point(left, endY));
-                        dc.DrawLine(pen, new Point(right, startY), new Point(right, endY));
-                    }
-                }
-            }
         }
 
         private void DrawChromiumSharpDottedBorder(DrawingContext dc, Brush brush, Rect rect, double t)
