@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:local="clr-namespace:WpfWebView2Poc"
         mc:Ignorable="d"
         Title="WPF vs Web HTML/CSS Dynamic TextBox &amp; Border Controller POC" Height="800" Width="1300"
         Background="#F8FAFC"
@@ -137,23 +138,14 @@
                             <StackPanel HorizontalAlignment="Center">
                                 <TextBlock Text="Live WPF Textbox Element:" FontWeight="SemiBold" FontSize="14" Foreground="#334155" Height="20" Margin="0,0,0,12" HorizontalAlignment="Left" />
 
-                                <!-- Host Container Grid hosting Border or Rectangle based on Style selection -->
+                                <!-- Host Container Grid hosting Chromium-Accurate Border Canvas -->
                                 <Grid x:Name="wpfHostGrid" Width="450" Height="150" HorizontalAlignment="Center">
-                                    <!-- Solid Border Component -->
-                                    <Border x:Name="wpfSolidBorder"
-                                            Background="#FFFFFF"
-                                            BorderBrush="#3B82F6"
-                                            BorderThickness="2"
-                                            CornerRadius="0"
-                                            Visibility="Visible" />
-
-                                    <!-- Dashed/Dotted Rectangle Component -->
-                                    <Rectangle x:Name="wpfDashedDottedRect"
-                                               Fill="#FFFFFF"
-                                               Stroke="#3B82F6"
-                                               StrokeThickness="2"
-                                               RadiusX="0" RadiusY="0"
-                                               Visibility="Collapsed" />
+                                    <!-- Chromium Skia Corner-Accurate Border Canvas -->
+                                    <local:ChromiumBorderCanvas x:Name="chromiumBorderCanvas"
+                                                                BorderStyle="solid"
+                                                                StrokeThickness="2"
+                                                                Stroke="#3B82F6"
+                                                                CornerRadius="0" />
 
                                     <!-- Dynamic Overlay TextBox supporting multiline input -->
                                     <TextBox x:Name="wpfDynamicTextBox"
@@ -186,7 +178,7 @@
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
                                             <TextBlock Text="height: " Foreground="#475569" />
-                                            <TextBlock x:Name="txtWpfSpecHeight" Text="150px" Foreground="#2563EB" />
+                                            <TextBlock x:Name="txtWpfSpecHeight" Text="150px" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
                                             <TextBlock Text="border-color: " Foreground="#475569" />
