@@ -146,7 +146,7 @@ namespace WpfWebView2Poc
 
             Brush brush = (Brush)new BrushConverter().ConvertFromString(colorHex)!;
 
-            // 2. Update Native WPF Controls (Matching CSS box-sizing: border-box)
+            // 2. Update Native WPF Controls Container
             if (wpfHostGrid != null)
             {
                 wpfHostGrid.Width = width;
@@ -159,53 +159,13 @@ namespace WpfWebView2Poc
                 wpfDynamicTextBox.Margin = new Thickness(thickness);
             }
 
-            if (borderStyle == "solid")
+            // 3. Update Chromium-Accurate Border Canvas
+            if (chromiumBorderCanvas != null)
             {
-                if (wpfSolidBorder != null)
-                {
-                    wpfSolidBorder.Visibility = Visibility.Visible;
-                    wpfSolidBorder.Width = width;
-                    wpfSolidBorder.Height = height;
-                    wpfSolidBorder.BorderThickness = new Thickness(thickness);
-                    wpfSolidBorder.BorderBrush = brush;
-                    wpfSolidBorder.CornerRadius = new CornerRadius(radius);
-                }
-                if (wpfDashedDottedRect != null)
-                {
-                    wpfDashedDottedRect.Visibility = Visibility.Collapsed;
-                }
-            }
-            else
-            {
-                if (wpfSolidBorder != null)
-                {
-                    wpfSolidBorder.Visibility = Visibility.Collapsed;
-                }
-                if (wpfDashedDottedRect != null)
-                {
-                    wpfDashedDottedRect.Visibility = Visibility.Visible;
-                    
-                    // Inset width/height and margin by thickness/2 matches CSS border-box 100%
-                    wpfDashedDottedRect.Margin = new Thickness(thickness / 2.0);
-                    wpfDashedDottedRect.Width = Math.Max(0, width - thickness);
-                    wpfDashedDottedRect.Height = Math.Max(0, height - thickness);
-
-                    wpfDashedDottedRect.StrokeThickness = thickness;
-                    wpfDashedDottedRect.Stroke = brush;
-                    wpfDashedDottedRect.RadiusX = Math.Max(0, radius - (thickness / 2.0));
-                    wpfDashedDottedRect.RadiusY = Math.Max(0, radius - (thickness / 2.0));
-
-                    if (borderStyle == "dashed")
-                    {
-                        wpfDashedDottedRect.StrokeDashArray = new DoubleCollection { 4, 2 };
-                        wpfDashedDottedRect.StrokeDashCap = PenLineCap.Flat;
-                    }
-                    else if (borderStyle == "dotted")
-                    {
-                        wpfDashedDottedRect.StrokeDashArray = new DoubleCollection { 1, 2 };
-                        wpfDashedDottedRect.StrokeDashCap = PenLineCap.Round;
-                    }
-                }
+                chromiumBorderCanvas.BorderStyle = borderStyle;
+                chromiumBorderCanvas.StrokeThickness = thickness;
+                chromiumBorderCanvas.Stroke = brush;
+                chromiumBorderCanvas.CornerRadius = radius;
             }
 
             // Update Specs Panel Text
@@ -216,7 +176,7 @@ namespace WpfWebView2Poc
             if (txtWpfSpecColor != null) txtWpfSpecColor.Text = colorHex;
             if (txtWpfSpecRadius != null) txtWpfSpecRadius.Text = $"{radius:0}px";
 
-            // 3. Send parameters to Web View (HTML/CSS)
+            // 4. Send parameters to Web View (HTML/CSS)
             if (webView != null && webView.CoreWebView2 != null)
             {
                 string script = $"updateStyleProperties('{borderStyle}', {thickness}, {width}, {height}, '{colorHex}', {radius});";
