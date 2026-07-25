@@ -7,8 +7,8 @@ namespace WpfWebView2Poc
     /// <summary>
     /// Custom WPF Control implementing Chromium Blink's complete C++ border rendering engine.
     /// Handles solid, dashed, and dotted borders across all thickness levels and corner radii:
-    /// - Dashed with rOuter < T (rInner == 0): 4 solid L-shaped corner caps (arm = 3.0T) + flat intermediate dashes, clipped by outer rounded border ring.
-    /// - Dashed with rOuter >= T (rInner > 0): Skia-aligned perimeter dash scaling along Rmid path.
+    /// - Dashed with rOuter <= T (rInner == 0): 4 solid L-shaped corner caps (arm = 2.0T) + flat intermediate dashes, clipped by outer rounded border ring.
+    /// - Dashed with rOuter > T (rInner > 0): Skia-aligned perimeter dash scaling along Rmid path with Flat stroke caps clipped by borderRingClip.
     /// - Dotted: Unified Chromium dotted architecture matching CSS Level 3 spec.
     /// </summary>
     public class ChromiumBorderCanvas : FrameworkElement
@@ -54,7 +54,8 @@ namespace WpfWebView2Poc
         }
 
         protected override void OnRender(DrawingContext dc)
-        { base.OnRender(dc);
+        {
+            base.OnRender(dc);
 
             double w = ActualWidth;
             double h = ActualHeight;
@@ -138,10 +139,10 @@ namespace WpfWebView2Poc
             };
 
             // Chromium Blink C++ Logic for Dashed Border with CornerRadius:
-            // Continuous perimeter Skia path is ONLY used when rOuter >= T (where inner radius rInner > 0).
-            // When rOuter < T (rInner == 0), Blink renders 4 solid L-shaped corner caps (arm = 3.0T)
-            // clipped by the outer rounded geometry mask (borderRingClip)!
-            if (rOuter >= t && rOuter > 0)
+            // Continuous perimeter Skia path is ONLY used when rOuter > T (where inner radius rInner = rOuter - T > 0).
+            // When rOuter <= T (rInner == 0), inner corner is a sharp 90-degree right angle,
+            // so Blink renders 4 solid L-shaped corner caps + flat intermediate dashes clipped by borderRingClip!
+            if (rOuter > t)
             {
                 // Rounded dashed path matching Chromium Skia when rInner > 0
                 double rMid = Math.Max(0, rOuter - t / 2.0);
@@ -153,14 +154,14 @@ namespace WpfWebView2Poc
                 int k = Math.Max(1, (int)Math.Round(perimeter / idealCycle));
                 double actualCycle = perimeter / k;
 
-                double dashLen = actualCycle * (2.0 / 3.0);
-                double gapLen = actualCycle * (1.0 / 3.0);
+                double dashLen = actualCycle * 0.5;
+                double gapLen = actualCycle * 0.5;
 
                 Pen dashedPen = new Pen(brush, t)
                 {
-                    DashCap = PenLineCap.Round,
-                    StartLineCap = PenLineCap.Round,
-                    EndLineCap = PenLineCap.Round,
+                    DashCap = PenLineCap.Flat,
+                    StartLineCap = PenLineCap.Flat,
+                    EndLineCap = PenLineCap.Flat,
                     DashStyle = new DashStyle(new double[] { dashLen / t, gapLen / t }, 0)
                 };
 
@@ -168,7 +169,7 @@ namespace WpfWebView2Poc
                 return;
             }
 
-            // Sharp 90-degree OR Hybrid Outer Rounded Corners (rOuter < T):
+            // Sharp 90-degree OR Hybrid Outer Rounded Corners (rOuter <= T):
             // Blink 4-Corner L-Cap (arm = 2.0T ideal dash length) + Centered Edge Dashes clipped by borderRingClip
             double arm = 2.0 * t; // Dynamic corner L-arm length matching 2.0 * T ideal dash length
 
