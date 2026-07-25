@@ -7,8 +7,8 @@ namespace WpfWebView2Poc
     /// <summary>
     /// Custom WPF Control implementing Chromium Blink's complete C++ border rendering engine.
     /// Handles solid, dashed, and dotted borders across all thickness levels and corner radii:
-    /// - Dashed with rOuter == 0: 4 solid L-shaped corner caps (arm = 1.5T) + Chromium exact numDashes = round((Dim - 4T) / 3T) math.
-    /// - Dashed with rOuter > 0: Skia-aligned perimeter dash scaling with 1:1 ratio & round stroke caps.
+    /// - Dashed with rOuter < T (rInner == 0): 4 solid L-shaped corner caps (arm = 3.0T) + flat intermediate dashes, clipped by outer rounded border ring.
+    /// - Dashed with rOuter >= T (rInner > 0): Skia-aligned perimeter dash scaling along Rmid path.
     /// - Dotted: Unified Chromium dotted architecture matching CSS Level 3 spec.
     /// </summary>
     public class ChromiumBorderCanvas : FrameworkElement
@@ -54,8 +54,7 @@ namespace WpfWebView2Poc
         }
 
         protected override void OnRender(DrawingContext dc)
-        {
-            base.OnRender(dc);
+        { base.OnRender(dc);
 
             double w = ActualWidth;
             double h = ActualHeight;
@@ -138,9 +137,13 @@ namespace WpfWebView2Poc
                 EndLineCap = PenLineCap.Flat
             };
 
-            if (rOuter > 0)
+            // Chromium Blink C++ Logic for Dashed Border with CornerRadius:
+            // Continuous perimeter Skia path is ONLY used when rOuter >= T (where inner radius rInner > 0).
+            // When rOuter < T (rInner == 0), Blink renders 4 solid L-shaped corner caps (arm = 3.0T)
+            // clipped by the outer rounded geometry mask (borderRingClip)!
+            if (rOuter >= t && rOuter > 0)
             {
-                // Rounded dashed path matching Chromium Skia
+                // Rounded dashed path matching Chromium Skia when rInner > 0
                 double rMid = Math.Max(0, rOuter - t / 2.0);
                 double straightX = Math.Max(0, w - 2 * rOuter);
                 double straightY = Math.Max(0, h - 2 * rOuter);
@@ -165,15 +168,16 @@ namespace WpfWebView2Poc
                 return;
             }
 
-            // Sharp 90-degree corners (r == 0): Chromium Blink 4-Corner L-Cap + Centered Edge Dashes
-            double arm = 1.5 * t; // Dynamic corner L-arm length scaling with thickness (1.5 * T)
+            // Sharp 90-degree OR Hybrid Outer Rounded Corners (rOuter < T):
+            // Blink 4-Corner L-Cap (arm = 2.0T ideal dash length) + Centered Edge Dashes clipped by borderRingClip
+            double arm = 2.0 * t; // Dynamic corner L-arm length matching 2.0 * T ideal dash length
 
             double left = rect.Left;
             double top = rect.Top;
             double right = rect.Right;
             double bottom = rect.Bottom;
 
-            // 1. Draw 4 Corner L-Dashes extending to outer boundaries (0, w, h) for sharp 90-degree mitered right angles
+            // 1. Draw 4 Corner L-Dashes extending to outer boundaries (0, w, h)
             // Top-Left L
             dc.DrawLine(pen, new Point(0, top), new Point(arm, top));
             dc.DrawLine(pen, new Point(left, 0), new Point(left, arm));
@@ -191,7 +195,7 @@ namespace WpfWebView2Poc
             dc.DrawLine(pen, new Point(left, h - arm), new Point(left, h));
 
             // 2. Top & Bottom Edge Dashes (Chromium exact numDashes = round((W - 4T) / 3T) math)
-            double gx = w - 3.0 * t; // Available space between 2 corner L-arms (from 1.5T to W - 1.5T)
+            double gx = w - 2.0 * arm; // Available space between 2 corner L-arms (from arm to W - arm)
             if (gx > 0)
             {
                 int numDashes = Math.Max(0, (int)Math.Round((w - 4.0 * t) / (3.0 * t)));
@@ -221,7 +225,7 @@ namespace WpfWebView2Poc
             }
 
             // 3. Left & Right Edge Dashes (Chromium exact numDashes = round((H - 4T) / 3T) math)
-            double gy = h - 3.0 * t; // Available space between 2 corner L-arms (from 1.5T to H - 1.5T)
+            double gy = h - 2.0 * arm; // Available space between 2 corner L-arms (from arm to H - arm)
             if (gy > 0)
             {
                 int numDashes = Math.Max(0, (int)Math.Round((h - 4.0 * t) / (3.0 * t)));
