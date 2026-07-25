@@ -1,0 +1,20 @@
+# Ignore Chromium Codebase Folders
+/third_party/
+/tools/
+/ui/
+/url/
+/v8/
+/webkit/
+
+# Ignore .NET & Build Outputs
+WpfWebView2Poc/bin/
+WpfWebView2Poc/obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Ignore OS / IDE metadata
+.DS_Store
+Thumbs.db
