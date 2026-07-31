@@ -75,7 +75,7 @@
                 </StackPanel>
 
                 <!-- 7. Border Color Selector -->
-                <StackPanel Margin="0,0,10,6">
+                <StackPanel Margin="0,0,16,6">
                     <TextBlock Text="Border Color" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="0,0,0,4" />
                     <ComboBox x:Name="cmbBorderColor" Width="120" Height="30" SelectionChanged="OnParameterChanged" SelectedIndex="0">
                         <ComboBoxItem Tag="#3B82F6" Content="Blue (#3B82F6)" />
@@ -85,6 +85,57 @@
                         <ComboBoxItem Tag="#F59E0B" Content="Amber (#F59E0B)" />
                         <ComboBoxItem Tag="#0F172A" Content="Dark (#0F172A)" />
                     </ComboBox>
+                </StackPanel>
+
+                <!-- Separator / Label for Box Shadow Controls -->
+                <Border Width="1" Height="28" Background="#CBD5E1" Margin="4,0,16,6" VerticalAlignment="Center" />
+
+                <!-- 8. Shadow Color Selector -->
+                <StackPanel Margin="0,0,16,6">
+                    <TextBlock Text="Shadow Color" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="0,0,0,4" />
+                    <ComboBox x:Name="cmbShadowColor" Width="130" Height="30" SelectionChanged="OnParameterChanged" SelectedIndex="0">
+                        <ComboBoxItem Tag="#40000000" Content="Translucent Black" />
+                        <ComboBoxItem Tag="#603B82F6" Content="Translucent Blue" />
+                        <ComboBoxItem Tag="#608B5CF6" Content="Translucent Purple" />
+                        <ComboBoxItem Tag="#60EF4444" Content="Translucent Red" />
+                        <ComboBoxItem Tag="#00000000" Content="None / Transparent" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- 9. Shadow Distance Slider (0 - 50 px) -->
+                <StackPanel Margin="0,0,16,6" Width="135">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow Distance" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowDistanceVal" Text="{Binding ElementName=sldShadowDistance, Path=Value, StringFormat='{}{0:0} px'}" FontWeight="Bold" FontSize="11" Foreground="#8B5CF6" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowDistance" Minimum="0" Maximum="50" Value="8" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- 10. Shadow Angle Slider (0 - 360 deg) -->
+                <StackPanel Margin="0,0,16,6" Width="135">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow Angle" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowAngleVal" Text="{Binding ElementName=sldShadowAngle, Path=Value, StringFormat='{}{0:0}°'}" FontWeight="Bold" FontSize="11" Foreground="#8B5CF6" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowAngle" Minimum="0" Maximum="360" Value="90" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- 11. Shadow Blur Slider (0 - 50 px) -->
+                <StackPanel Margin="0,0,16,6" Width="135">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow Blur" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowBlurVal" Text="{Binding ElementName=sldShadowBlur, Path=Value, StringFormat='{}{0:0} px'}" FontWeight="Bold" FontSize="11" Foreground="#8B5CF6" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowBlur" Minimum="0" Maximum="50" Value="12" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- 12. Shadow Size / Spread Slider (-20 - 50 px) -->
+                <StackPanel Margin="0,0,16,6" Width="135">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow Size" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowSizeVal" Text="{Binding ElementName=sldShadowSize, Path=Value, StringFormat='{}{0:0} px'}" FontWeight="Bold" FontSize="11" Foreground="#8B5CF6" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowSize" Minimum="-20" Maximum="50" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
                 </StackPanel>
 
             </WrapPanel>
@@ -130,16 +181,27 @@
                                 Padding="24"
                                 BorderBrush="#E2E8F0"
                                 BorderThickness="1"
-                                HorizontalAlignment="Stretch">
+                                HorizontalAlignment="Stretch"
+                                MinHeight="520">
                             <Border.Effect>
                                 <DropShadowEffect Color="#000000" BlurRadius="6" ShadowDepth="1" Opacity="0.04" />
                             </Border.Effect>
 
-                            <StackPanel HorizontalAlignment="Center">
-                                <TextBlock Text="Live WPF Textbox Element:" FontWeight="SemiBold" FontSize="14" Foreground="#334155" Height="20" Margin="0,0,0,12" HorizontalAlignment="Left" />
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                                <!-- Host Container Grid hosting Chromium-Accurate Border Canvas -->
-                                <Grid x:Name="wpfHostGrid" Width="450" Height="150" HorizontalAlignment="Center">
+                                <!-- Title (Row 0) -->
+                                <TextBlock Grid.Row="0" Text="Live WPF Textbox Element:" FontWeight="SemiBold" FontSize="14" Foreground="#334155" Height="20" Margin="0,0,0,12" HorizontalAlignment="Left" />
+
+                                <!-- Host Container Grid hosting Chromium-Accurate Border Canvas (Row 1 - Centered) -->
+                                <Grid Grid.Row="1" x:Name="wpfHostGrid" Width="450" Height="150" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,20">
+                                    <!-- Chromium Box Shadow Layer Canvas -->
+                                    <local:ChromiumShadowCanvas x:Name="chromiumShadowCanvas" CornerRadius="0" />
+
                                     <!-- Chromium Skia Corner-Accurate Border Canvas -->
                                     <local:ChromiumBorderCanvas x:Name="chromiumBorderCanvas"
                                                                 BorderStyle="solid"
@@ -161,8 +223,8 @@
                                              TextChanged="WpfInput_TextChanged" />
                                 </Grid>
 
-                                <!-- Specs Panel Matching .specs-panel CSS -->
-                                <Border Margin="0,20,0,0" Background="#F1F5F9" CornerRadius="8" Padding="12,16" HorizontalAlignment="Stretch">
+                                <!-- Specs Panel Matching .specs-panel CSS (Row 2 - Absolute Bottom) -->
+                                <Border Grid.Row="2" Background="#F1F5F9" CornerRadius="8" Padding="12,16" HorizontalAlignment="Stretch" VerticalAlignment="Bottom">
                                     <StackPanel TextElement.FontFamily="Consolas" TextElement.FontSize="12">
                                         <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
                                             <TextBlock Text="border-style: " Foreground="#475569" />
@@ -188,10 +250,13 @@
                                             <TextBlock Text="border-radius: " Foreground="#475569" />
                                             <TextBlock x:Name="txtWpfSpecRadius" Text="0px" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
+                                            <TextBlock Text="box-shadow: " Foreground="#475569" />
+                                            <TextBlock x:Name="txtWpfSpecShadow" Text="0px 8px 12px 0px #40000000" FontWeight="Bold" Foreground="#8B5CF6" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
-
-                            </StackPanel>
+                            </Grid>
                         </Border>
 
                     </StackPanel>

@@ -146,6 +146,28 @@ namespace WpfWebView2Poc
 
             Brush brush = (Brush)new BrushConverter().ConvertFromString(colorHex)!;
 
+            // Read Box Shadow Parameters (Size, Distance, Color, Blur, Angle)
+            string shadowColorHex = "#40000000";
+            if (cmbShadowColor != null && cmbShadowColor.SelectedItem is ComboBoxItem shadowItem && shadowItem.Tag != null)
+            {
+                shadowColorHex = shadowItem.Tag.ToString()!;
+            }
+
+            double shadowDistance = sldShadowDistance?.Value ?? 0;
+            double shadowAngle = sldShadowAngle?.Value ?? 0;
+            double shadowBlur = sldShadowBlur?.Value ?? 0;
+            double shadowSize = sldShadowSize?.Value ?? 0;
+
+            // Convert Distance + Angle (degrees) to X, Y offsets
+            double rad = shadowAngle * Math.PI / 180.0;
+            double offsetX = Math.Round(shadowDistance * Math.Cos(rad));
+            double offsetY = Math.Round(shadowDistance * Math.Sin(rad));
+
+            Color sColor = (Color)ColorConverter.ConvertFromString(shadowColorHex);
+            double alphaFraction = Math.Round(sColor.A / 255.0, 2);
+            string cssColor = $"rgba({sColor.R}, {sColor.G}, {sColor.B}, {alphaFraction.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
+            string boxShadowCss = $"{offsetX:0}px {offsetY:0}px {shadowBlur:0}px {shadowSize:0}px {cssColor}";
+
             // 2. Update Native WPF Controls Container
             if (wpfHostGrid != null)
             {
@@ -159,7 +181,17 @@ namespace WpfWebView2Poc
                 wpfDynamicTextBox.Margin = new Thickness(thickness);
             }
 
-            // 3. Update Chromium-Accurate Border Canvas
+            // 3. Update Chromium Border Canvas & Chromium Shadow Canvas
+            if (chromiumShadowCanvas != null)
+            {
+                chromiumShadowCanvas.CornerRadius = radius;
+                chromiumShadowCanvas.ShadowColor = sColor;
+                chromiumShadowCanvas.ShadowDistance = shadowDistance;
+                chromiumShadowCanvas.ShadowAngle = shadowAngle;
+                chromiumShadowCanvas.ShadowBlur = shadowBlur;
+                chromiumShadowCanvas.ShadowSize = shadowSize;
+            }
+
             if (chromiumBorderCanvas != null)
             {
                 chromiumBorderCanvas.BorderStyle = borderStyle;
@@ -175,11 +207,13 @@ namespace WpfWebView2Poc
             if (txtWpfSpecHeight != null) txtWpfSpecHeight.Text = $"{height:0}px";
             if (txtWpfSpecColor != null) txtWpfSpecColor.Text = colorHex;
             if (txtWpfSpecRadius != null) txtWpfSpecRadius.Text = $"{radius:0}px";
+            if (txtWpfSpecShadow != null) txtWpfSpecShadow.Text = boxShadowCss;
 
             // 4. Send parameters to Web View (HTML/CSS)
             if (webView != null && webView.CoreWebView2 != null)
             {
-                string script = $"updateStyleProperties('{borderStyle}', {thickness}, {width}, {height}, '{colorHex}', {radius});";
+                string safeShadow = JsonSerializer.Serialize(boxShadowCss);
+                string script = $"updateStyleProperties('{borderStyle}', {thickness}, {width}, {height}, '{colorHex}', {radius}, {safeShadow});";
                 await webView.ExecuteScriptAsync(script);
             }
         }
