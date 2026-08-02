@@ -90,16 +90,41 @@
                 <!-- Separator / Label for Box Shadow Controls -->
                 <Border Width="1" Height="28" Background="#CBD5E1" Margin="4,0,16,6" VerticalAlignment="Center" />
 
-                <!-- 8. Shadow Color Selector -->
-                <StackPanel Margin="0,0,16,6">
-                    <TextBlock Text="Shadow Color" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="0,0,0,4" />
-                    <ComboBox x:Name="cmbShadowColor" Width="130" Height="30" SelectionChanged="OnParameterChanged" SelectedIndex="0">
-                        <ComboBoxItem Tag="#40000000" Content="Translucent Black" />
-                        <ComboBoxItem Tag="#603B82F6" Content="Translucent Blue" />
-                        <ComboBoxItem Tag="#608B5CF6" Content="Translucent Purple" />
-                        <ComboBoxItem Tag="#60EF4444" Content="Translucent Red" />
-                        <ComboBoxItem Tag="#00000000" Content="None / Transparent" />
-                    </ComboBox>
+                <!-- 8. Shadow RGB & Opacity Sliders -->
+                <!-- Shadow Red (0 - 255) -->
+                <StackPanel Margin="0,0,12,6" Width="110">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow R" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowRVal" Text="{Binding ElementName=sldShadowR, Path=Value, StringFormat='{}{0:0}'}" FontWeight="Bold" FontSize="11" Foreground="#DC2626" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowR" Minimum="0" Maximum="255" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Shadow Green (0 - 255) -->
+                <StackPanel Margin="0,0,12,6" Width="110">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow G" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowGVal" Text="{Binding ElementName=sldShadowG, Path=Value, StringFormat='{}{0:0}'}" FontWeight="Bold" FontSize="11" Foreground="#16A34A" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowG" Minimum="0" Maximum="255" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Shadow Blue (0 - 255) -->
+                <StackPanel Margin="0,0,12,6" Width="110">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow B" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowBVal" Text="{Binding ElementName=sldShadowB, Path=Value, StringFormat='{}{0:0}'}" FontWeight="Bold" FontSize="11" Foreground="#2563EB" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowB" Minimum="0" Maximum="255" Value="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Shadow Opacity (0 - 100%) -->
+                <StackPanel Margin="0,0,16,6" Width="110">
+                    <Grid Margin="0,0,0,2">
+                        <TextBlock Text="Shadow Opacity" FontWeight="SemiBold" FontSize="11" Foreground="#475569" HorizontalAlignment="Left" />
+                        <TextBlock x:Name="lblShadowOpacityVal" Text="{Binding ElementName=sldShadowOpacity, Path=Value, StringFormat='{}{0:0}%'}" FontWeight="Bold" FontSize="11" Foreground="#8B5CF6" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Slider x:Name="sldShadowOpacity" Minimum="0" Maximum="100" Value="25" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="OnParameterChanged" VerticalAlignment="Center" />
                 </StackPanel>
 
                 <!-- 9. Shadow Distance Slider (0 - 50 px) -->
@@ -198,7 +223,7 @@
                                 <TextBlock Grid.Row="0" Text="Live WPF Textbox Element:" FontWeight="SemiBold" FontSize="14" Foreground="#334155" Height="20" Margin="0,0,0,12" HorizontalAlignment="Left" />
 
                                 <!-- Host Container Grid hosting Chromium-Accurate Border Canvas (Row 1 - Centered) -->
-                                <Grid Grid.Row="1" x:Name="wpfHostGrid" Width="450" Height="150" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,20">
+                                <Grid Grid.Row="1" x:Name="wpfHostGrid" Width="450" Height="150" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0">
                                     <!-- Chromium Box Shadow Layer Canvas -->
                                     <local:ChromiumShadowCanvas x:Name="chromiumShadowCanvas" CornerRadius="0" />
 
@@ -219,42 +244,50 @@
                                              AcceptsReturn="True"
                                              TextWrapping="Wrap"
                                              Margin="2"
-                                             Padding="10,8"
+                                             Padding="14,10"
                                              TextChanged="WpfInput_TextChanged" />
                                 </Grid>
 
-                                <!-- Specs Panel Matching .specs-panel CSS (Row 2 - Absolute Bottom) -->
-                                <Border Grid.Row="2" Background="#F1F5F9" CornerRadius="8" Padding="12,16" HorizontalAlignment="Stretch" VerticalAlignment="Bottom">
-                                    <StackPanel TextElement.FontFamily="Consolas" TextElement.FontSize="12">
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
+                                <!-- Compact Specs Panel (Horizontal Wrap Bar) -->
+                                <Border Grid.Row="2" Background="#F1F5F9" CornerRadius="6" Padding="12,6" HorizontalAlignment="Stretch" VerticalAlignment="Bottom" Margin="0,12,0,0">
+                                    <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.FontFamily="Consolas" TextElement.FontSize="11">
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,6,2">
                                             <TextBlock Text="border-style: " Foreground="#475569" />
-                                            <TextBlock x:Name="txtWpfSpecStyle" Text="dashed" FontWeight="Bold" Foreground="#2563EB" />
+                                            <TextBlock x:Name="txtWpfSpecStyle" Text="solid" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
+                                        <TextBlock Text="•" Foreground="#CBD5E1" Margin="0,2,6,2" />
+                                        
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,6,2">
                                             <TextBlock Text="border-width: " Foreground="#475569" />
                                             <TextBlock x:Name="txtWpfSpecThickness" Text="11px" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
-                                            <TextBlock Text="width: " Foreground="#475569" />
+                                        <TextBlock Text="•" Foreground="#CBD5E1" Margin="0,2,6,2" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,6,2">
+                                            <TextBlock Text="size: " Foreground="#475569" />
                                             <TextBlock x:Name="txtWpfSpecWidth" Text="450px" FontWeight="Bold" Foreground="#2563EB" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
-                                            <TextBlock Text="height: " Foreground="#475569" />
+                                            <TextBlock Text=" × " Foreground="#475569" />
                                             <TextBlock x:Name="txtWpfSpecHeight" Text="150px" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
+                                        <TextBlock Text="•" Foreground="#CBD5E1" Margin="0,2,6,2" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,6,2">
                                             <TextBlock Text="border-color: " Foreground="#475569" />
                                             <TextBlock x:Name="txtWpfSpecColor" Text="#3B82F6" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
+                                        <TextBlock Text="•" Foreground="#CBD5E1" Margin="0,2,6,2" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,6,2">
                                             <TextBlock Text="border-radius: " Foreground="#475569" />
                                             <TextBlock x:Name="txtWpfSpecRadius" Text="0px" FontWeight="Bold" Foreground="#2563EB" />
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Height="18" Margin="0,2">
+                                        <TextBlock Text="•" Foreground="#CBD5E1" Margin="0,2,6,2" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
                                             <TextBlock Text="box-shadow: " Foreground="#475569" />
-                                            <TextBlock x:Name="txtWpfSpecShadow" Text="0px 8px 12px 0px #40000000" FontWeight="Bold" Foreground="#8B5CF6" />
+                                            <TextBlock x:Name="txtWpfSpecShadow" Text="0px 8px 12px 0px rgba(0,0,0,0.25)" FontWeight="Bold" Foreground="#8B5CF6" />
                                         </StackPanel>
-                                    </StackPanel>
+                                    </WrapPanel>
                                 </Border>
                             </Grid>
                         </Border>
