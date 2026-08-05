@@ -145,20 +145,14 @@ namespace WpfWebView2Poc
             }
             else
             {
-                shadowR = Math.Max(0, s * 0.15 + ShadowBlur * 0.3);
+                shadowR = (ShadowBlur > 0) ? Math.Max(0, s * 0.15 + ShadowBlur * 0.3) : 0;
             }
 
-            // 1. Draw SOLID Outer Spread Rectangle with sRGB gamma compensation factor (0.88x alpha).
-            // WPF's D3D BlurEffect renders in non-linear sRGB space, making 100% alpha shadows look denser
-            // than Chromium Skia's linear-blended sRGB pipeline. Scaling alpha by 0.88 matches Skia intensity.
-            Color color = ShadowColor;
-            byte correctedAlpha = (byte)Math.Round(color.A * 0.88);
-            Color adjustedColor = Color.FromArgb(correctedAlpha, color.R, color.G, color.B);
-
+            // 1. Draw SOLID Outer Spread Rectangle
             Rect outerSpreadRect = new Rect(offsetX - s, offsetY - s, Math.Max(0, w + s * 2.0), Math.Max(0, h + s * 2.0));
             RectangleGeometry outerSpreadGeo = new RectangleGeometry(outerSpreadRect, shadowR, shadowR);
 
-            Brush shadowBrush = new SolidColorBrush(adjustedColor);
+            Brush shadowBrush = new SolidColorBrush(ShadowColor);
             dc.DrawGeometry(shadowBrush, null, outerSpreadGeo);
 
             // 2. Post-Blur Difference Clip (Excludes inner element rect [0, 0, w, h] from final visual)
