@@ -93,10 +93,10 @@ namespace WpfWebView2Poc
         {
             if (ShadowColor.A > 0 && ShadowBlur > 0)
             {
-                // Use WPF BlurEffect with Gaussian kernel type to match Chromium Skia's GPU Gaussian blur filter
+                // Use WPF BlurEffect scaled by 1.1 to match Skia GPU Gaussian blur dispersion
                 BlurEffect blur = new BlurEffect
                 {
-                    Radius = ShadowBlur,
+                    Radius = ShadowBlur * 1.1,
                     KernelType = KernelType.Gaussian
                 };
                 this.Effect = blur;
@@ -115,7 +115,11 @@ namespace WpfWebView2Poc
             double h = ActualHeight;
             double r = CornerRadius;
 
-            if (w <= 0 || h <= 0 || ShadowColor.A == 0) return;
+            if (w <= 0 || h <= 0 || ShadowColor.A == 0)
+            {
+                this.Clip = null;
+                return;
+            }
 
             // Chromium Blink C++ Box Shadow Algorithm Implementation
             double s = ShadowSize;
@@ -126,23 +130,39 @@ namespace WpfWebView2Poc
             double offsetY = Math.Round(dist * Math.Sin(angleRad));
 
             double clampedR = Math.Min(r, Math.Min(w / 2.0, h / 2.0));
-            // Per W3C CSS Spec: If border-radius is 0, spread maintains sharp 90-degree corners
-            double shadowR = (clampedR > 0) ? Math.Max(0, clampedR + s) : 0;
+            // Per W3C CSS Spec & Skia painter: If border-radius > 0, shadow corner radius = border-radius + spread.
+            // If border-radius == 0, corner rounding is produced by Gaussian blur dispersion (approx 0.3 * blur + 0.15 * spread).
+            double shadowR;
+            if (clampedR > 0)
+            {
+                shadowR = Math.Max(0, clampedR + s);
+            }
+            else
+            {
+                shadowR = Math.Max(0, s * 0.15 + ShadowBlur * 0.3);
+            }
 
-            // 1. Outer Spread Expansion translated by (offsetX, offsetY)
+            // 1. Draw SOLID Outer Spread Rectangle with sRGB gamma compensation factor (0.88x alpha).
+            // WPF's D3D BlurEffect renders in non-linear sRGB space, making 100% alpha shadows look denser
+            // than Chromium Skia's linear-blended sRGB pipeline. Scaling alpha by 0.88 matches Skia intensity.
+            Color color = ShadowColor;
+            byte correctedAlpha = (byte)Math.Round(color.A * 0.88);
+            Color adjustedColor = Color.FromArgb(correctedAlpha, color.R, color.G, color.B);
+
             Rect outerSpreadRect = new Rect(offsetX - s, offsetY - s, Math.Max(0, w + s * 2.0), Math.Max(0, h + s * 2.0));
             RectangleGeometry outerSpreadGeo = new RectangleGeometry(outerSpreadRect, shadowR, shadowR);
 
-            // 2. Inner Box Geometry (0, 0, w, h) - clipped out per W3C CSS spec
-            Rect innerBoxRect = new Rect(0, 0, w, h);
-            RectangleGeometry innerBoxGeo = new RectangleGeometry(innerBoxRect, clampedR, clampedR);
+            Brush shadowBrush = new SolidColorBrush(adjustedColor);
+            dc.DrawGeometry(shadowBrush, null, outerSpreadGeo);
 
-            // 3. Exclude inner box from spread shadow shape
-            CombinedGeometry shadowGeometry = new CombinedGeometry(GeometryCombineMode.Exclude, outerSpreadGeo, innerBoxGeo);
+            // 2. Post-Blur Difference Clip (Excludes inner element rect [0, 0, w, h] from final visual)
+            // Per W3C CSS Spec / Blink BoxPainterBase: Inner box area must remain transparent.
+            // Applying this.Clip excludes the inner rect AFTER WPF BlurEffect has rendered the solid shadow field.
+            Rect infiniteBounds = new Rect(-2000, -2000, w + 4000, h + 4000);
+            RectangleGeometry infiniteGeo = new RectangleGeometry(infiniteBounds);
+            RectangleGeometry innerBoxGeo = new RectangleGeometry(new Rect(0, 0, w, h), clampedR, clampedR);
 
-            // 4. Draw shadow shape filled directly with ShadowColor
-            Brush shadowBrush = new SolidColorBrush(ShadowColor);
-            dc.DrawGeometry(shadowBrush, null, shadowGeometry);
+            this.Clip = new CombinedGeometry(GeometryCombineMode.Exclude, infiniteGeo, innerBoxGeo);
         }
     }
 }
