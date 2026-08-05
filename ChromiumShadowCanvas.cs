@@ -19,6 +19,7 @@ namespace WpfWebView2Poc
         {
             UseLayoutRounding = true;
             SnapsToDevicePixels = true;
+            Loaded += (s, e) => UpdateShadowEffect();
         }
 
         public static readonly DependencyProperty ShadowDistanceProperty =
@@ -110,6 +111,11 @@ namespace WpfWebView2Poc
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
+
+            if (this.Effect == null && ShadowBlur > 0 && ShadowColor.A > 0)
+            {
+                UpdateShadowEffect();
+            }
 
             double w = ActualWidth;
             double h = ActualHeight;
