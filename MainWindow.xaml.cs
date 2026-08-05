@@ -142,8 +142,10 @@ namespace WpfWebView2Poc
 
         private async void InitializeWebViewAsync()
         {
-            // Initialize WebView2 environment
-            await webView.EnsureCoreWebView2Async(null);
+            // Force WebView2/Chromium to render in standard sRGB color space, matching SkiaSharp & WPF colors 100%
+            var options = new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions("--force-color-profile=srgb");
+            var environment = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, null, options);
+            await webView.EnsureCoreWebView2Async(environment);
 
             // Subscribe to Web -> WPF messages
             webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
