@@ -94,10 +94,10 @@ namespace WpfWebView2Poc
         {
             if (ShadowColor.A > 0 && ShadowBlur > 0)
             {
-                // Use WPF BlurEffect scaled by 1.1 to match Skia GPU Gaussian blur dispersion
+                // Convert CSS blur radius to WPF D3D Gaussian kernel radius
                 BlurEffect blur = new BlurEffect
                 {
-                    Radius = ShadowBlur * 1.1,
+                    Radius = ShadowBlur * 1.25,
                     KernelType = KernelType.Gaussian
                 };
                 this.Effect = blur;
@@ -136,19 +136,9 @@ namespace WpfWebView2Poc
             double offsetY = Math.Round(dist * Math.Sin(angleRad));
 
             double clampedR = Math.Min(r, Math.Min(w / 2.0, h / 2.0));
-            // Per W3C CSS Spec & Skia painter: If border-radius > 0, shadow corner radius = border-radius + spread.
-            // If border-radius == 0, corner rounding is produced by Gaussian blur dispersion (approx 0.3 * blur + 0.15 * spread).
-            double shadowR;
-            if (clampedR > 0)
-            {
-                shadowR = Math.Max(0, clampedR + s);
-            }
-            else
-            {
-                shadowR = (ShadowBlur > 0) ? Math.Max(0, s * 0.15 + ShadowBlur * 0.3) : 0;
-            }
+            double shadowR = clampedR > 0 ? Math.Max(0, clampedR + s) : (ShadowBlur > 0 ? ShadowBlur * 0.35 : 0);
 
-            // 1. Draw SOLID Outer Spread Rectangle
+            // 1. Draw Outer Base Rectangle expanded by exact CSS spread s
             Rect outerSpreadRect = new Rect(offsetX - s, offsetY - s, Math.Max(0, w + s * 2.0), Math.Max(0, h + s * 2.0));
             RectangleGeometry outerSpreadGeo = new RectangleGeometry(outerSpreadRect, shadowR, shadowR);
 
