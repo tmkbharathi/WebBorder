@@ -18,7 +18,7 @@
                     <Button Content="Choose video…" Click="ChooseVideo_Click" Padding="14,8" Margin="0,0,18,0" />
                     <TextBlock x:Name="VideoNameText" Text="No video selected" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,22,0" />
                     <Button Content="Choose overlay image…" Click="ChooseOverlayImage_Click" Padding="14,8" Margin="0,0,10,0" />
-                    <TextBlock x:Name="OverlayImageText" Text="No VLC image" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,18,0" />
+                    <TextBlock x:Name="OverlayImageText" Text="No overlay image" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,18,0" />
                     <Button Content="FFmpeg…" Click="ChooseFfmpeg_Click" Padding="14,8" Margin="0,0,22,0" />
                     <CheckBox x:Name="AudioToggle" Content="Audio" IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0" />
                     <TextBlock x:Name="AudioStatusText" Text="Audio ready" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,18,0" />
@@ -58,6 +58,8 @@
                                 <RotateTransform x:Name="VideoRotation" Angle="0" />
                             </Grid.RenderTransform>
                             <Image x:Name="VideoFrame" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality" />
+                            <Image x:Name="FfmpegOverlayImage" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="18"
+                                   Width="180" MaxHeight="180" Stretch="Uniform" Visibility="Collapsed" IsHitTestVisible="False" />
                         </Grid>
                     </Grid>
                 </Grid>
@@ -76,13 +78,14 @@
                         </DockPanel>
                     </Border>
                     <Grid x:Name="VlcSurface" Grid.Row="1" ClipToBounds="True" SizeChanged="VlcSurface_SizeChanged">
-                        <Image x:Name="VlcVideoFrame" Stretch="Fill" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                            <Image.RenderTransform>
+                        <Grid x:Name="VlcVideoContainer" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
                                 <RotateTransform x:Name="VlcRotation" Angle="0" />
-                            </Image.RenderTransform>
-                        </Image>
-                        <Image x:Name="VlcOverlayImage" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="18"
-                               Width="180" MaxHeight="180" Stretch="Uniform" Visibility="Collapsed" IsHitTestVisible="False" />
+                            </Grid.RenderTransform>
+                            <Image x:Name="VlcVideoFrame" Stretch="Fill" />
+                            <Image x:Name="VlcOverlayImage" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="18"
+                                   Width="180" MaxHeight="180" Stretch="Uniform" Visibility="Collapsed" IsHitTestVisible="False" />
+                        </Grid>
                     </Grid>
                 </Grid>
             </Border>

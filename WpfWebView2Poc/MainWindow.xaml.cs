@@ -134,7 +134,7 @@ namespace WpfWebView2Poc
         {
             var dialog = new OpenFileDialog
             {
-                Title = "Choose an image to overlay on the VLC video",
+                Title = "Choose an image to overlay on both previews",
                 Filter = "PNG images|*.png|Image files|*.png;*.bmp;*.jpg;*.jpeg;*.webp|All files|*.*"
             };
 
@@ -201,12 +201,16 @@ namespace WpfWebView2Poc
                 image.EndInit();
                 image.Freeze();
                 VlcOverlayImage.Source = image;
+                FfmpegOverlayImage.Source = image;
                 VlcOverlayImage.Visibility = Visibility.Visible;
+                FfmpegOverlayImage.Visibility = Visibility.Visible;
             }
             else
             {
                 VlcOverlayImage.Source = null;
+                FfmpegOverlayImage.Source = null;
                 VlcOverlayImage.Visibility = Visibility.Collapsed;
+                FfmpegOverlayImage.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -668,8 +672,6 @@ namespace WpfWebView2Poc
                     if (_vlcFrameBitmap is null || _vlcFrameBitmap.PixelWidth != _vlcVideoWidth || _vlcFrameBitmap.PixelHeight != _vlcVideoHeight)
                     {
                         _vlcFrameBitmap = new WriteableBitmap(_vlcVideoWidth, _vlcVideoHeight, 96, 96, System.Windows.Media.PixelFormats.Bgr32, null);
-                        VlcVideoFrame.Width = _vlcVideoWidth;
-                        VlcVideoFrame.Height = _vlcVideoHeight;
                         VlcVideoFrame.Source = _vlcFrameBitmap;
                         UpdateVlcLayout();
                     }
@@ -718,8 +720,8 @@ namespace WpfWebView2Poc
             double scale = Math.Min(VlcSurface.ActualWidth / diagonal, VlcSurface.ActualHeight / diagonal);
             if (scale > 0 && double.IsFinite(scale))
             {
-                VlcVideoFrame.Width = _previewWidth * scale;
-                VlcVideoFrame.Height = _previewHeight * scale;
+                VlcVideoContainer.Width = _previewWidth * scale;
+                VlcVideoContainer.Height = _previewHeight * scale;
             }
         }
 
