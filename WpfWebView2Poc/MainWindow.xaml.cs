@@ -1,9 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -16,14 +13,12 @@ namespace WpfWebView2Poc
 {
     public partial class MainWindow : Window
     {
-        private static readonly Regex VideoSizePattern = new(@"\b(\d{2,5})x(\d{2,5})\b", RegexOptions.Compiled);
         private bool _syncingAngle;
         private bool _syncingPreviewSize;
         private bool _audioEnabled = true;
-        private Process? _ffmpegProcess;
-        private Process? _ffplayProcess;
         private LibVLC? _libVlc;
         private MediaPlayer? _vlcPlayer;
+        private MediaPlayer? _audioPlayer;
         private readonly object _vlcFrameLock = new();
         private readonly MediaPlayer.LibVLCVideoLockCb _vlcLockCallback;
         private readonly MediaPlayer.LibVLCVideoUnlockCb _vlcUnlockCallback;
@@ -43,7 +38,6 @@ namespace WpfWebView2Poc
         private int _videoHeight;
         private int _previewWidth;
         private int _previewHeight;
-        private string? _ffmpegPath;
         private string? _selectedVideoPath;
         private string? _overlayImagePath;
 
@@ -57,12 +51,12 @@ namespace WpfWebView2Poc
             _vlcDisplayCallback = DisplayVlcVideo;
             _vlcFormatCallback = ConfigureVlcVideo;
             _vlcCleanupCallback = CleanupVlcVideo;
-            _ffmpegPath = FindFfmpeg();
             try
             {
                 Core.Initialize();
                 _libVlc = new LibVLC("--no-video-title-show");
                 _vlcPlayer = new MediaPlayer(_libVlc);
+                _audioPlayer = new MediaPlayer(_libVlc);
                 _vlcPlayer.SetVideoFormatCallbacks(_vlcFormatCallback, _vlcCleanupCallback);
                 _vlcPlayer.SetVideoCallbacks(_vlcLockCallback, _vlcUnlockCallback, _vlcDisplayCallback);
                 _vlcPlayer.Playing += (_, _) => QueueVlcStatusUpdate("Playing");
@@ -101,12 +95,9 @@ namespace WpfWebView2Poc
 
         private async Task LoadVideoAsync(string videoPath)
         {
-            if (!EnsureFfmpegSelected())
-                return;
-
             VideoNameText.Text = Path.GetFileName(videoPath);
             _selectedVideoPath = videoPath;
-            EmptyStateText.Text = "Starting FFmpeg…";
+            EmptyStateText.Text = "Starting FFmpeg decoder…";
             EmptyStateText.Visibility = Visibility.Visible;
             RotatingFrame.Visibility = Visibility.Collapsed;
             StopPlayback();
@@ -214,101 +205,28 @@ namespace WpfWebView2Poc
             }
         }
 
-        private void ChooseFfmpeg_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFileDialog
-            {
-                Title = "Select the FFmpeg executable",
-                Filter = "FFmpeg executable|ffmpeg.exe|Executable files|*.exe|All files|*.*",
-                FileName = "ffmpeg.exe"
-            };
-
-            if (dialog.ShowDialog(this) == true)
-            {
-                _ffmpegPath = dialog.FileName;
-                VideoNameText.ToolTip = $"Using {_ffmpegPath}";
-            }
-        }
-
-        private bool EnsureFfmpegSelected()
-        {
-            if (!string.IsNullOrWhiteSpace(_ffmpegPath) && File.Exists(_ffmpegPath))
-                return true;
-
-            MessageBox.Show(this,
-                "FFmpeg was not found on PATH or beside the app. Select ffmpeg.exe with the FFmpeg… button, then choose the video again.",
-                "FFmpeg is required", MessageBoxButton.OK, MessageBoxImage.Information);
-            return false;
-        }
-
         private void StartAudio(string videoPath)
         {
+            if (_audioPlayer is null || _libVlc is null)
+                return;
             if (!_audioEnabled)
             {
-                AudioStatusText.Text = "Audio off";
-                return;
-            }
-
-            if (_ffplayProcess is not null)
                 StopAudio();
-
-            string? ffplayPath = FindFfplay();
-            if (ffplayPath is null)
-            {
-                AudioStatusText.Text = "Audio unavailable";
-                AudioStatusText.ToolTip = "ffplay.exe was not found beside ffmpeg.exe or on PATH.";
                 return;
             }
-
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = ffplayPath,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardError = true
-            };
-            startInfo.ArgumentList.Add("-hide_banner");
-            startInfo.ArgumentList.Add("-loglevel");
-            startInfo.ArgumentList.Add("error");
-            startInfo.ArgumentList.Add("-nodisp");
-            startInfo.ArgumentList.Add("-loop");
-            startInfo.ArgumentList.Add("0");
-            startInfo.ArgumentList.Add("-i");
-            startInfo.ArgumentList.Add(videoPath);
-            startInfo.ArgumentList.Add("-vn");
-
-            var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-            process.ErrorDataReceived += (_, args) =>
-            {
-                if (!string.IsNullOrWhiteSpace(args.Data))
-                    Dispatcher.BeginInvoke(() =>
-                    {
-                        if (ReferenceEquals(_ffplayProcess, process))
-                            AudioStatusText.ToolTip = args.Data;
-                    });
-            };
-            process.Exited += (_, _) =>
-            {
-                Dispatcher.BeginInvoke(() =>
-                {
-                    if (ReferenceEquals(_ffplayProcess, process))
-                        AudioStatusText.Text = "Audio stopped";
-                });
-            };
 
             try
             {
-                if (!process.Start())
-                    throw new InvalidOperationException("FFplay could not be started.");
-
-                _ffplayProcess = process;
-                process.BeginErrorReadLine();
+                _audioPlayer.Stop();
+                using var media = new Media(_libVlc, new Uri(videoPath));
+                media.AddOption(":no-video");
+                if (!_audioPlayer.Play(media))
+                    throw new InvalidOperationException("VLC audio playback did not start.");
                 AudioStatusText.Text = "Audio playing";
-                AudioStatusText.ToolTip = "Audio is played by FFplay.";
+                AudioStatusText.ToolTip = "Audio is played in-process by LibVLC.";
             }
-            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+            catch (Exception ex)
             {
-                process.Dispose();
                 AudioStatusText.Text = "Audio unavailable";
                 AudioStatusText.ToolTip = ex.Message;
             }
@@ -316,13 +234,7 @@ namespace WpfWebView2Poc
 
         private void StopAudio()
         {
-            if (_ffplayProcess is not null)
-            {
-                StopChildProcess(_ffplayProcess);
-                _ffplayProcess.Dispose();
-                _ffplayProcess = null;
-            }
-
+            _audioPlayer?.Stop();
             AudioStatusText.Text = _audioEnabled ? "Audio stopped" : "Audio off";
             AudioStatusText.ToolTip = _audioEnabled
                 ? "Audio playback is stopped. It will resume when the video is selected again."
@@ -331,91 +243,14 @@ namespace WpfWebView2Poc
 
         private async Task PlayVideoAsync(string videoPath, CancellationToken cancellationToken)
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = _ffmpegPath!,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            startInfo.ArgumentList.Add("-nostdin");
-            startInfo.ArgumentList.Add("-hide_banner");
-            startInfo.ArgumentList.Add("-loglevel");
-            startInfo.ArgumentList.Add("info");
-            startInfo.ArgumentList.Add("-re");
-            startInfo.ArgumentList.Add("-hwaccel");
-            startInfo.ArgumentList.Add("auto");
-            startInfo.ArgumentList.Add("-noautorotate");
-            startInfo.ArgumentList.Add("-stream_loop");
-            startInfo.ArgumentList.Add("-1");
-            startInfo.ArgumentList.Add("-i");
-            startInfo.ArgumentList.Add(videoPath);
-            startInfo.ArgumentList.Add("-map");
-            startInfo.ArgumentList.Add("0:v:0");
-            startInfo.ArgumentList.Add("-an");
-            startInfo.ArgumentList.Add("-sn");
-            startInfo.ArgumentList.Add("-dn");
-            startInfo.ArgumentList.Add("-vf");
-            startInfo.ArgumentList.Add("format=bgra");
-            startInfo.ArgumentList.Add("-pix_fmt");
-            startInfo.ArgumentList.Add("bgra");
-            startInfo.ArgumentList.Add("-f");
-            startInfo.ArgumentList.Add("rawvideo");
-            startInfo.ArgumentList.Add("pipe:1");
-
-            var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-            var dimensions = new TaskCompletionSource<(int Width, int Height)>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var stderr = new StringBuilder();
-            process.ErrorDataReceived += (_, args) =>
-            {
-                if (args.Data is null)
-                    return;
-
-                lock (stderr)
-                {
-                    stderr.AppendLine(args.Data);
-                    if (stderr.Length > 12000)
-                        stderr.Remove(0, stderr.Length - 12000);
-                }
-
-                var match = VideoSizePattern.Match(args.Data);
-                if (match.Success && int.TryParse(match.Groups[1].Value, out int width) && int.TryParse(match.Groups[2].Value, out int height))
-                {
-                    if (width > 0 && height > 0 && width <= 16384 && height <= 16384)
-                        dimensions.TrySetResult((width, height));
-                }
-            };
-
-            process.Exited += (_, _) =>
-            {
-                if (!dimensions.Task.IsCompleted)
-                {
-                    lock (stderr)
-                        dimensions.TrySetException(new InvalidOperationException(GetFfmpegError(stderr)));
-                }
-            };
-
-            if (!process.Start())
-                throw new InvalidOperationException("FFmpeg could not be started.");
-
-            _ffmpegProcess = process;
-            process.BeginErrorReadLine();
-            StartAudio(videoPath);
-
-            using var registration = cancellationToken.Register(() => TryKill(process));
-            var completed = await Task.WhenAny(dimensions.Task, process.WaitForExitAsync(cancellationToken));
-            cancellationToken.ThrowIfCancellationRequested();
-            if (completed != dimensions.Task)
-                throw new InvalidOperationException(GetFfmpegError(stderr));
-
-            (_videoWidth, _videoHeight) = await dimensions.Task;
+            using var decoder = await Task.Run(() => new FfmpegVideoDecoder(videoPath), cancellationToken);
+            (_videoWidth, _videoHeight) = (decoder.Width, decoder.Height);
             _previewWidth = _videoWidth;
             _previewHeight = _videoHeight;
             int stride = checked(_videoWidth * 4);
             int frameBytes = checked(stride * _videoHeight);
             _frameBitmap = new WriteableBitmap(_videoWidth, _videoHeight, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
+            byte[] frame = new byte[frameBytes];
 
             await Dispatcher.InvokeAsync(() =>
             {
@@ -430,90 +265,19 @@ namespace WpfWebView2Poc
                 UpdateVlcLayout();
             });
 
-            var frame = new byte[frameBytes];
-            Stream output = process.StandardOutput.BaseStream;
+            StartAudio(videoPath);
             while (!cancellationToken.IsCancellationRequested)
             {
-                int read = 0;
-                while (read < frame.Length)
-                {
-                    int count = await output.ReadAsync(frame.AsMemory(read, frame.Length - read), cancellationToken);
-                    if (count == 0)
-                        break;
-                    read += count;
-                }
-
-                if (read != frame.Length)
+                bool hasFrame = await Task.Run(() => decoder.TryReadFrame(frame), cancellationToken);
+                if (!hasFrame)
                     break;
 
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    if (_frameBitmap is not null)
-                        _frameBitmap.WritePixels(new Int32Rect(0, 0, _videoWidth, _videoHeight), frame, stride, 0);
+                    _frameBitmap?.WritePixels(new Int32Rect(0, 0, _videoWidth, _videoHeight), frame, stride, 0);
                 }, System.Windows.Threading.DispatcherPriority.Render, cancellationToken);
+                await Task.Delay(decoder.FrameInterval, cancellationToken);
             }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            await process.WaitForExitAsync(cancellationToken);
-            if (process.ExitCode != 0)
-                throw new InvalidOperationException(GetFfmpegError(stderr));
-        }
-
-        private static string GetFfmpegError(StringBuilder stderr)
-        {
-            string output;
-            lock (stderr)
-                output = stderr.ToString().Trim();
-
-            if (string.IsNullOrWhiteSpace(output))
-                return "FFmpeg stopped before it could decode a video frame. Check that the selected executable is a valid FFmpeg build.";
-
-            string[] lines = output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-            int start = Math.Max(0, lines.Length - 8);
-            return string.Join(Environment.NewLine, lines, start, lines.Length - start);
-        }
-
-        private static void TryKill(Process process)
-        {
-            try
-            {
-                if (!process.HasExited)
-                    process.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException) { }
-            catch (System.ComponentModel.Win32Exception) { }
-        }
-
-        private static string? FindFfmpeg()
-        {
-            foreach (string relativePath in new[] { "ffmpeg.exe", Path.Combine("ffmpeg", "ffmpeg.exe"), Path.Combine("Resources", "ffmpeg.exe") })
-            {
-                string localPath = Path.Combine(AppContext.BaseDirectory, relativePath);
-                if (File.Exists(localPath))
-                    return localPath;
-            }
-
-            try
-            {
-                string? bundledPath = Directory.GetFiles(AppContext.BaseDirectory, "ffmpeg.exe", SearchOption.AllDirectories).FirstOrDefault();
-                if (bundledPath is not null)
-                    return bundledPath;
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-
-            foreach (string directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-            {
-                try
-                {
-                    string candidate = Path.Combine(directory.Trim(), "ffmpeg.exe");
-                    if (File.Exists(candidate))
-                        return candidate;
-                }
-                catch (ArgumentException) { }
-            }
-
-            return null;
         }
 
         private void RotationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -761,77 +525,10 @@ namespace WpfWebView2Poc
             _playbackCancellation?.Cancel();
             _playbackCancellation?.Dispose();
             _playbackCancellation = null;
-
-            if (_ffmpegProcess is not null)
-            {
-                StopChildProcess(_ffmpegProcess);
-                _ffmpegProcess.Dispose();
-                _ffmpegProcess = null;
-            }
-
-            if (_ffplayProcess is not null)
-                StopAudio();
-
+            StopAudio();
             _frameBitmap = null;
             VideoFrame.Source = null;
             RotatingFrame.Visibility = Visibility.Collapsed;
-        }
-
-        private static void StopChildProcess(Process process)
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                    if (!process.WaitForExit(5000) && !process.HasExited)
-                    {
-                        // A final direct kill handles ffplay/ffmpeg instances whose child
-                        // processes kept the process tree alive during the first wait.
-                        process.Kill();
-                        process.WaitForExit(2000);
-                    }
-                }
-            }
-            catch (InvalidOperationException) { }
-            catch (System.ComponentModel.Win32Exception) { }
-        }
-
-        private string? FindFfplay()
-        {
-            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PATH")))
-            {
-                foreach (string directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    try
-                    {
-                        string candidate = Path.Combine(directory.Trim(), "ffplay.exe");
-                        if (File.Exists(candidate))
-                            return candidate;
-                    }
-                    catch (ArgumentException) { }
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(_ffmpegPath))
-            {
-                string? directory = Path.GetDirectoryName(_ffmpegPath);
-                if (directory is not null)
-                {
-                    string siblingPath = Path.Combine(directory, "ffplay.exe");
-                    if (File.Exists(siblingPath))
-                        return siblingPath;
-                }
-            }
-
-            try
-            {
-                return Directory.GetFiles(AppContext.BaseDirectory, "ffplay.exe", SearchOption.AllDirectories).FirstOrDefault();
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-
-            return null;
         }
 
         protected override void OnClosed(EventArgs e)
@@ -843,6 +540,8 @@ namespace WpfWebView2Poc
                 _vlcPlayer.Dispose();
                 _vlcPlayer = null;
             }
+            _audioPlayer?.Dispose();
+            _audioPlayer = null;
             _libVlc?.Dispose();
             _libVlc = null;
             base.OnClosed(e);

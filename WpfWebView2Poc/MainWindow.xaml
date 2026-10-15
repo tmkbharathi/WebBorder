@@ -19,7 +19,6 @@
                     <TextBlock x:Name="VideoNameText" Text="No video selected" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,22,0" />
                     <Button Content="Choose overlay image…" Click="ChooseOverlayImage_Click" Padding="14,8" Margin="0,0,10,0" />
                     <TextBlock x:Name="OverlayImageText" Text="No overlay image" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,18,0" />
-                    <Button Content="FFmpeg…" Click="ChooseFfmpeg_Click" Padding="14,8" Margin="0,0,22,0" />
                     <CheckBox x:Name="AudioToggle" Content="Audio" IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0" />
                     <TextBlock x:Name="AudioStatusText" Text="Audio ready" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,18,0" />
                     <TextBlock Text="Rotation" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,10,0" />

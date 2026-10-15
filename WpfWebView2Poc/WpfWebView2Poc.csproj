@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,5 +20,10 @@
   <ItemGroup>
     <Content Include="Samples\Ayyappa.mp4" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Target Name="RemoveFfmpegCommandLineTools" AfterTargets="Build;Publish">
+    <Delete Files="$(OutDir)ffmpeg\win-x64\ffmpeg.exe;$(OutDir)ffmpeg\win-x64\ffplay.exe;$(OutDir)ffmpeg\win-x64\ffprobe.exe" />
+    <Delete Files="$(PublishDir)ffmpeg\win-x64\ffmpeg.exe;$(PublishDir)ffmpeg\win-x64\ffplay.exe;$(PublishDir)ffmpeg\win-x64\ffprobe.exe" Condition="'$(PublishDir)' != ''" />
+  </Target>
 
 </Project>
