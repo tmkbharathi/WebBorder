@@ -4,7 +4,7 @@
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         Title="FFmpeg vs VLC Rotation Comparison" Height="760" Width="1320"
         MinHeight="600" MinWidth="900" Background="#F1F5F9"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen" Loaded="MainWindow_Loaded">
     <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -14,7 +14,7 @@
         <Border Padding="20" Margin="0,0,0,20" Background="White" CornerRadius="12">
             <StackPanel>
                 <TextBlock Text="FFmpeg vs VLC" FontSize="25" FontWeight="Bold" Foreground="#0F172A" />
-                <TextBlock Text="Compare the rotated FFmpeg preview on the left with the original VLC video and optional image overlay on the right." Margin="0,6,0,18" FontSize="14" Foreground="#64748B" />
+                <TextBlock Text="Rotate the FFmpeg preview on the left and compare it with the original VLC video and optional image overlay on the right." Margin="0,6,0,18" FontSize="14" Foreground="#64748B" />
                 <WrapPanel VerticalAlignment="Center">
                     <Button Content="Choose video…" Click="ChooseVideo_Click" Padding="14,8" Margin="0,0,18,0" />
                     <TextBlock x:Name="VideoNameText" Text="No video selected" VerticalAlignment="Center" Foreground="#64748B" Margin="0,0,22,0" />

@@ -16,4 +16,8 @@
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Samples\Ayyappa.mp4" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

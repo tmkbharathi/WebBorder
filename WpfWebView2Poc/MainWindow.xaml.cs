@@ -47,6 +47,13 @@ namespace WpfWebView2Poc
             }
         }
 
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            string samplePath = Path.Combine(AppContext.BaseDirectory, "Samples", "Ayyappa.mp4");
+            if (File.Exists(samplePath))
+                await LoadVideoAsync(samplePath);
+        }
+
         private async void ChooseVideo_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFileDialog
@@ -58,11 +65,16 @@ namespace WpfWebView2Poc
             if (dialog.ShowDialog(this) != true)
                 return;
 
+            await LoadVideoAsync(dialog.FileName);
+        }
+
+        private async Task LoadVideoAsync(string videoPath)
+        {
             if (!EnsureFfmpegSelected())
                 return;
 
-            VideoNameText.Text = Path.GetFileName(dialog.FileName);
-            _selectedVideoPath = dialog.FileName;
+            VideoNameText.Text = Path.GetFileName(videoPath);
+            _selectedVideoPath = videoPath;
             EmptyStateText.Text = "Starting FFmpeg…";
             EmptyStateText.Visibility = Visibility.Visible;
             RotatingFrame.Visibility = Visibility.Collapsed;
@@ -74,7 +86,7 @@ namespace WpfWebView2Poc
 
             try
             {
-                await PlayVideoAsync(dialog.FileName, cancellation.Token);
+                await PlayVideoAsync(videoPath, cancellation.Token);
             }
             catch (OperationCanceledException)
             {
@@ -490,12 +502,11 @@ namespace WpfWebView2Poc
             if (_videoWidth <= 0 || _videoHeight <= 0 || VideoSurface.ActualWidth <= 0 || VideoSurface.ActualHeight <= 0)
                 return;
 
-            double radians = VideoRotation.Angle * Math.PI / 180.0;
-            double cos = Math.Abs(Math.Cos(radians));
-            double sin = Math.Abs(Math.Sin(radians));
-            double rotatedWidth = _videoWidth * cos + _videoHeight * sin;
-            double rotatedHeight = _videoWidth * sin + _videoHeight * cos;
-            double scale = Math.Min(VideoSurface.ActualWidth / rotatedWidth, VideoSurface.ActualHeight / rotatedHeight);
+            // Fit the frame's diagonal once, so the full video remains inside the pane at every
+            // angle without recalculating its scale as the angle changes. This avoids the
+            // visible shrinking and growing caused by per-angle rotated-bounds fitting.
+            double diagonal = Math.Sqrt((double)_videoWidth * _videoWidth + (double)_videoHeight * _videoHeight);
+            double scale = Math.Min(VideoSurface.ActualWidth / diagonal, VideoSurface.ActualHeight / diagonal);
             VideoFrame.Width = _videoWidth * scale;
             VideoFrame.Height = _videoHeight * scale;
             RotatingFrame.Width = VideoFrame.Width;
@@ -510,14 +521,14 @@ namespace WpfWebView2Poc
 
             if (_ffmpegProcess is not null)
             {
-                TryKill(_ffmpegProcess);
+                StopChildProcess(_ffmpegProcess);
                 _ffmpegProcess.Dispose();
                 _ffmpegProcess = null;
             }
 
             if (_ffplayProcess is not null)
             {
-                TryKill(_ffplayProcess);
+                StopChildProcess(_ffplayProcess);
                 _ffplayProcess.Dispose();
                 _ffplayProcess = null;
             }
@@ -525,6 +536,26 @@ namespace WpfWebView2Poc
             _frameBitmap = null;
             VideoFrame.Source = null;
             RotatingFrame.Visibility = Visibility.Collapsed;
+        }
+
+        private static void StopChildProcess(Process process)
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    if (!process.WaitForExit(5000) && !process.HasExited)
+                    {
+                        // A final direct kill handles ffplay/ffmpeg instances whose child
+                        // processes kept the process tree alive during the first wait.
+                        process.Kill();
+                        process.WaitForExit(2000);
+                    }
+                }
+            }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
         }
 
         private string? FindFfplay()
