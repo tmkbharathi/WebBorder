@@ -19,6 +19,7 @@ namespace WpfWebView2Poc
         private static readonly Regex VideoSizePattern = new(@"\b(\d{2,5})x(\d{2,5})\b", RegexOptions.Compiled);
         private bool _syncingAngle;
         private bool _syncingPreviewSize;
+        private bool _audioEnabled = true;
         private Process? _ffmpegProcess;
         private Process? _ffplayProcess;
         private LibVLC? _libVlc;
@@ -49,6 +50,8 @@ namespace WpfWebView2Poc
         public MainWindow()
         {
             InitializeComponent();
+            AudioToggle.Checked += AudioToggle_Changed;
+            AudioToggle.Unchecked += AudioToggle_Changed;
             _vlcLockCallback = LockVlcVideo;
             _vlcUnlockCallback = UnlockVlcVideo;
             _vlcDisplayCallback = DisplayVlcVideo;
@@ -143,6 +146,24 @@ namespace WpfWebView2Poc
             UpdateVlcLogo();
         }
 
+        private void AudioToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            _audioEnabled = AudioToggle.IsChecked == true;
+            if (!_audioEnabled)
+            {
+                StopAudio();
+                return;
+            }
+
+            if (_selectedVideoPath is not null)
+                StartAudio(_selectedVideoPath);
+            else
+            {
+                AudioStatusText.Text = "Audio ready";
+                AudioStatusText.ToolTip = "Audio will play when a video is selected.";
+            }
+        }
+
         private void StartVlcVideo()
         {
             if (_vlcPlayer is null || _libVlc is null || _selectedVideoPath is null)
@@ -218,6 +239,15 @@ namespace WpfWebView2Poc
 
         private void StartAudio(string videoPath)
         {
+            if (!_audioEnabled)
+            {
+                AudioStatusText.Text = "Audio off";
+                return;
+            }
+
+            if (_ffplayProcess is not null)
+                StopAudio();
+
             string? ffplayPath = FindFfplay();
             if (ffplayPath is null)
             {
@@ -278,6 +308,21 @@ namespace WpfWebView2Poc
                 AudioStatusText.Text = "Audio unavailable";
                 AudioStatusText.ToolTip = ex.Message;
             }
+        }
+
+        private void StopAudio()
+        {
+            if (_ffplayProcess is not null)
+            {
+                StopChildProcess(_ffplayProcess);
+                _ffplayProcess.Dispose();
+                _ffplayProcess = null;
+            }
+
+            AudioStatusText.Text = _audioEnabled ? "Audio stopped" : "Audio off";
+            AudioStatusText.ToolTip = _audioEnabled
+                ? "Audio playback is stopped. It will resume when the video is selected again."
+                : "Audio playback is disabled.";
         }
 
         private async Task PlayVideoAsync(string videoPath, CancellationToken cancellationToken)
@@ -723,11 +768,7 @@ namespace WpfWebView2Poc
             }
 
             if (_ffplayProcess is not null)
-            {
-                StopChildProcess(_ffplayProcess);
-                _ffplayProcess.Dispose();
-                _ffplayProcess = null;
-            }
+                StopAudio();
 
             _frameBitmap = null;
             VideoFrame.Source = null;
