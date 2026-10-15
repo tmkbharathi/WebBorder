@@ -12,7 +12,7 @@
   <ItemGroup>
     <PackageReference Include="FFmpegDotNet.bin.winx64" Version="9.0.2" />
     <PackageReference Include="FFmpegDotNet._AutoGen" Version="9.0.1" />
-    <PackageReference Include="LibVLCSharp.WPF" Version="3.10.2" />
+    <PackageReference Include="LibVLCSharp" Version="3.10.2" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
   </ItemGroup>
 

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -17,28 +18,55 @@ namespace WpfWebView2Poc
     {
         private static readonly Regex VideoSizePattern = new(@"\b(\d{2,5})x(\d{2,5})\b", RegexOptions.Compiled);
         private bool _syncingAngle;
+        private bool _syncingPreviewSize;
         private Process? _ffmpegProcess;
         private Process? _ffplayProcess;
         private LibVLC? _libVlc;
         private MediaPlayer? _vlcPlayer;
+        private readonly object _vlcFrameLock = new();
+        private readonly MediaPlayer.LibVLCVideoLockCb _vlcLockCallback;
+        private readonly MediaPlayer.LibVLCVideoUnlockCb _vlcUnlockCallback;
+        private readonly MediaPlayer.LibVLCVideoDisplayCb _vlcDisplayCallback;
+        private readonly MediaPlayer.LibVLCVideoFormatCb _vlcFormatCallback;
+        private readonly MediaPlayer.LibVLCVideoCleanupCb _vlcCleanupCallback;
         private CancellationTokenSource? _playbackCancellation;
         private WriteableBitmap? _frameBitmap;
+        private WriteableBitmap? _vlcFrameBitmap;
+        private byte[]? _vlcFrameBuffer;
+        private IntPtr _vlcVideoMemory;
+        private int _vlcVideoWidth;
+        private int _vlcVideoHeight;
+        private int _vlcVideoPitch;
+        private int _vlcFrameDispatchPending;
         private int _videoWidth;
         private int _videoHeight;
+        private int _previewWidth;
+        private int _previewHeight;
         private string? _ffmpegPath;
         private string? _selectedVideoPath;
         private string? _overlayImagePath;
-        private bool _vlcViewLoaded;
 
         public MainWindow()
         {
             InitializeComponent();
+            _vlcLockCallback = LockVlcVideo;
+            _vlcUnlockCallback = UnlockVlcVideo;
+            _vlcDisplayCallback = DisplayVlcVideo;
+            _vlcFormatCallback = ConfigureVlcVideo;
+            _vlcCleanupCallback = CleanupVlcVideo;
             _ffmpegPath = FindFfmpeg();
             try
             {
                 Core.Initialize();
                 _libVlc = new LibVLC("--no-video-title-show");
                 _vlcPlayer = new MediaPlayer(_libVlc);
+                _vlcPlayer.SetVideoFormatCallbacks(_vlcFormatCallback, _vlcCleanupCallback);
+                _vlcPlayer.SetVideoCallbacks(_vlcLockCallback, _vlcUnlockCallback, _vlcDisplayCallback);
+                _vlcPlayer.Playing += (_, _) => QueueVlcStatusUpdate("Playing");
+                _vlcPlayer.Paused += (_, _) => QueueVlcStatusUpdate("Paused");
+                _vlcPlayer.Stopped += (_, _) => QueueVlcStatusUpdate("Stopped");
+                _vlcPlayer.EndReached += (_, _) => QueueVlcStatusUpdate("End of video");
+                _vlcPlayer.EncounteredError += (_, _) => QueueVlcStatusUpdate("VLC playback error");
             }
             catch (Exception ex)
             {
@@ -115,35 +143,24 @@ namespace WpfWebView2Poc
             UpdateVlcLogo();
         }
 
-        private void VlcVideoView_Loaded(object sender, RoutedEventArgs e)
-        {
-            _vlcViewLoaded = true;
-            if (_vlcPlayer is null)
-            {
-                VlcStatusText.Text = "VLC unavailable";
-                return;
-            }
-
-            VlcVideoView.MediaPlayer = _vlcPlayer;
-            if (_selectedVideoPath is not null)
-                StartVlcVideo();
-        }
-
         private void StartVlcVideo()
         {
-            if (_vlcPlayer is null || _libVlc is null || !_vlcViewLoaded || _selectedVideoPath is null)
+            if (_vlcPlayer is null || _libVlc is null || _selectedVideoPath is null)
                 return;
 
             try
             {
                 _vlcPlayer.Stop();
+                VlcVideoFrame.Source = null;
                 using var media = new Media(_libVlc, new Uri(_selectedVideoPath));
                 media.AddOption(":no-audio");
+                media.AddOption(":avcodec-hw=none");
                 if (!_vlcPlayer.Play(media))
                     throw new InvalidOperationException("VLC did not start playback.");
 
-                VlcStatusText.Text = "Playing · no rotation";
                 UpdateVlcLogo();
+                UpdateVlcStatus();
+                UpdateVlcLayout();
             }
             catch (Exception ex)
             {
@@ -154,32 +171,21 @@ namespace WpfWebView2Poc
 
         private void UpdateVlcLogo()
         {
-            if (_vlcPlayer is null)
-                return;
-
-            try
+            if (!string.IsNullOrWhiteSpace(_overlayImagePath) && File.Exists(_overlayImagePath))
             {
-                if (!string.IsNullOrWhiteSpace(_overlayImagePath) && File.Exists(_overlayImagePath))
-                {
-                    _vlcPlayer.SetLogoString(VideoLogoOption.File, _overlayImagePath);
-                    _vlcPlayer.SetLogoInt(VideoLogoOption.Position, 4); // top-left
-                    _vlcPlayer.SetLogoInt(VideoLogoOption.X, 18);
-                    _vlcPlayer.SetLogoInt(VideoLogoOption.Y, 18);
-                    _vlcPlayer.SetLogoInt(VideoLogoOption.Opacity, 255);
-                    _vlcPlayer.SetLogoInt(VideoLogoOption.Enable, 1);
-                    VlcStatusText.Text = "Playing · image overlay";
-                }
-                else
-                {
-                    _vlcPlayer.SetLogoInt(VideoLogoOption.Enable, 0);
-                    if (_selectedVideoPath is not null)
-                        VlcStatusText.Text = "Playing · no rotation";
-                }
+                var image = new BitmapImage();
+                image.BeginInit();
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.UriSource = new Uri(_overlayImagePath, UriKind.Absolute);
+                image.EndInit();
+                image.Freeze();
+                VlcOverlayImage.Source = image;
+                VlcOverlayImage.Visibility = Visibility.Visible;
             }
-            catch (Exception ex)
+            else
             {
-                VlcStatusText.Text = "Overlay unavailable";
-                VlcStatusText.ToolTip = ex.Message;
+                VlcOverlayImage.Source = null;
+                VlcOverlayImage.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -356,6 +362,8 @@ namespace WpfWebView2Poc
                 throw new InvalidOperationException(GetFfmpegError(stderr));
 
             (_videoWidth, _videoHeight) = await dimensions.Task;
+            _previewWidth = _videoWidth;
+            _previewHeight = _videoHeight;
             int stride = checked(_videoWidth * 4);
             int frameBytes = checked(stride * _videoHeight);
             _frameBitmap = new WriteableBitmap(_videoWidth, _videoHeight, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
@@ -363,9 +371,14 @@ namespace WpfWebView2Poc
             await Dispatcher.InvokeAsync(() =>
             {
                 VideoFrame.Source = _frameBitmap;
+                _syncingPreviewSize = true;
+                WidthInput.Text = _previewWidth.ToString();
+                HeightInput.Text = _previewHeight.ToString();
+                _syncingPreviewSize = false;
                 EmptyStateText.Visibility = Visibility.Collapsed;
                 RotatingFrame.Visibility = Visibility.Visible;
                 UpdateFrameLayout();
+                UpdateVlcLayout();
             });
 
             var frame = new byte[frameBytes];
@@ -463,7 +476,10 @@ namespace WpfWebView2Poc
             RotationInput.Text = Math.Round(RotationSlider.Value).ToString();
             _syncingAngle = false;
             VideoRotation.Angle = RotationSlider.Value;
+            VlcRotation.Angle = RotationSlider.Value;
+            UpdateVlcStatus();
             UpdateFrameLayout();
+            UpdateVlcLayout();
         }
 
         private void RotationInput_TextChanged(object sender, TextChangedEventArgs e)
@@ -478,7 +494,10 @@ namespace WpfWebView2Poc
                 RotationInput.Text = degrees.ToString();
             _syncingAngle = false;
             VideoRotation.Angle = degrees;
+            VlcRotation.Angle = degrees;
+            UpdateVlcStatus();
             UpdateFrameLayout();
+            UpdateVlcLayout();
         }
 
         private void ApplyRotation_Click(object sender, RoutedEventArgs e)
@@ -492,23 +511,200 @@ namespace WpfWebView2Poc
             RotationInput.Text = degrees.ToString();
             _syncingAngle = false;
             VideoRotation.Angle = degrees;
+            VlcRotation.Angle = degrees;
             UpdateFrameLayout();
+            UpdateVlcLayout();
+            UpdateVlcStatus();
         }
 
         private void VideoSurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateFrameLayout();
 
+        private void VlcSurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateVlcLayout();
+
+        private void UpdateVlcStatus()
+        {
+            if (_selectedVideoPath is not null)
+            {
+                VlcStatusText.Text = $"Playing · {VlcRotation.Angle:0}° WPF-rendered VLC frame";
+                VlcStatusText.ToolTip = _vlcVideoWidth > 0 && _vlcVideoHeight > 0
+                    ? $"VLC decoded frame: {_vlcVideoWidth} × {_vlcVideoHeight}"
+                    : "Waiting for the first VLC frame.";
+            }
+        }
+
+        private void QueueVlcStatusUpdate(string state)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (state == "Playing")
+                    UpdateVlcStatus();
+                else if (_selectedVideoPath is not null)
+                    VlcStatusText.Text = state;
+            }));
+        }
+
+        private uint ConfigureVlcVideo(ref IntPtr opaque, IntPtr chroma, ref uint width, ref uint height, ref uint pitches, ref uint lines)
+        {
+            if (width is 0 or > 16384 || height is 0 or > 16384)
+                return 0;
+
+            try
+            {
+                uint pitch = checked(width * 4);
+                int bufferSize = checked((int)(pitch * height));
+                byte[] pixelFormat = System.Text.Encoding.ASCII.GetBytes("RV32");
+                Marshal.Copy(pixelFormat, 0, chroma, pixelFormat.Length);
+
+                lock (_vlcFrameLock)
+                {
+                    if (_vlcVideoMemory != IntPtr.Zero)
+                        Marshal.FreeHGlobal(_vlcVideoMemory);
+
+                    _vlcVideoMemory = Marshal.AllocHGlobal(bufferSize);
+                    _vlcVideoWidth = (int)width;
+                    _vlcVideoHeight = (int)height;
+                    _vlcVideoPitch = (int)pitch;
+                }
+
+                pitches = pitch;
+                lines = height;
+                return 1;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        private IntPtr LockVlcVideo(IntPtr opaque, IntPtr planes)
+        {
+            lock (_vlcFrameLock)
+                Marshal.WriteIntPtr(planes, _vlcVideoMemory);
+            return IntPtr.Zero;
+        }
+
+        private void UnlockVlcVideo(IntPtr opaque, IntPtr picture, IntPtr planes) { }
+
+        private void DisplayVlcVideo(IntPtr opaque, IntPtr picture)
+        {
+            lock (_vlcFrameLock)
+            {
+                if (_vlcVideoMemory == IntPtr.Zero || _vlcVideoWidth <= 0 || _vlcVideoHeight <= 0)
+                    return;
+
+                int bufferLength = checked(_vlcVideoPitch * _vlcVideoHeight);
+                if (_vlcFrameBuffer is null || _vlcFrameBuffer.Length != bufferLength)
+                    _vlcFrameBuffer = new byte[bufferLength];
+                Marshal.Copy(_vlcVideoMemory, _vlcFrameBuffer, 0, bufferLength);
+            }
+
+            if (Interlocked.Exchange(ref _vlcFrameDispatchPending, 1) != 0)
+                return;
+
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateVlcFrameOnUi), System.Windows.Threading.DispatcherPriority.Render);
+            }
+            catch (InvalidOperationException)
+            {
+                Interlocked.Exchange(ref _vlcFrameDispatchPending, 0);
+            }
+        }
+
+        private void UpdateVlcFrameOnUi()
+        {
+            try
+            {
+                lock (_vlcFrameLock)
+                {
+                    if (_vlcFrameBuffer is null || _vlcVideoWidth <= 0 || _vlcVideoHeight <= 0)
+                        return;
+
+                    if (_vlcFrameBitmap is null || _vlcFrameBitmap.PixelWidth != _vlcVideoWidth || _vlcFrameBitmap.PixelHeight != _vlcVideoHeight)
+                    {
+                        _vlcFrameBitmap = new WriteableBitmap(_vlcVideoWidth, _vlcVideoHeight, 96, 96, System.Windows.Media.PixelFormats.Bgr32, null);
+                        VlcVideoFrame.Width = _vlcVideoWidth;
+                        VlcVideoFrame.Height = _vlcVideoHeight;
+                        VlcVideoFrame.Source = _vlcFrameBitmap;
+                        UpdateVlcLayout();
+                    }
+
+                    _vlcFrameBitmap.WritePixels(new Int32Rect(0, 0, _vlcVideoWidth, _vlcVideoHeight), _vlcFrameBuffer, _vlcVideoPitch, 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                VlcStatusText.Text = "VLC frame display error";
+                VlcStatusText.ToolTip = ex.Message;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _vlcFrameDispatchPending, 0);
+            }
+        }
+
+        private void CleanupVlcVideo(ref IntPtr opaque)
+        {
+            lock (_vlcFrameLock)
+            {
+                if (_vlcVideoMemory != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(_vlcVideoMemory);
+                    _vlcVideoMemory = IntPtr.Zero;
+                }
+
+                _vlcVideoWidth = 0;
+                _vlcVideoHeight = 0;
+                _vlcVideoPitch = 0;
+                _vlcFrameBuffer = null;
+            }
+        }
+
+        private void UpdateVlcLayout()
+        {
+            if (_previewWidth <= 0 || _previewHeight <= 0 || _vlcVideoWidth <= 0 || _vlcVideoHeight <= 0 ||
+                VlcSurface.ActualWidth <= 0 || VlcSurface.ActualHeight <= 0)
+                return;
+
+            // Resize only the WPF image element. LibVLC continues decoding at its native frame
+            // dimensions and is never stopped or reconfigured by preview-size edits. Uniform
+            // stretch preserves the complete decoded frame if VLC reports a different aspect.
+            double diagonal = Math.Sqrt((double)_previewWidth * _previewWidth + (double)_previewHeight * _previewHeight);
+            double scale = Math.Min(VlcSurface.ActualWidth / diagonal, VlcSurface.ActualHeight / diagonal);
+            if (scale > 0 && double.IsFinite(scale))
+            {
+                VlcVideoFrame.Width = _previewWidth * scale;
+                VlcVideoFrame.Height = _previewHeight * scale;
+            }
+        }
+
+        private void PreviewSizeInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!IsInitialized || _syncingPreviewSize ||
+                !int.TryParse(WidthInput.Text, out int width) ||
+                !int.TryParse(HeightInput.Text, out int height) ||
+                width is < 1 or > 16384 || height is < 1 or > 16384)
+                return;
+
+            _previewWidth = width;
+            _previewHeight = height;
+            UpdateFrameLayout();
+            UpdateVlcLayout();
+        }
+
         private void UpdateFrameLayout()
         {
-            if (_videoWidth <= 0 || _videoHeight <= 0 || VideoSurface.ActualWidth <= 0 || VideoSurface.ActualHeight <= 0)
+            if (_videoWidth <= 0 || _videoHeight <= 0 || _previewWidth <= 0 || _previewHeight <= 0 ||
+                VideoSurface.ActualWidth <= 0 || VideoSurface.ActualHeight <= 0)
                 return;
 
             // Fit the frame's diagonal once, so the full video remains inside the pane at every
             // angle without recalculating its scale as the angle changes. This avoids the
             // visible shrinking and growing caused by per-angle rotated-bounds fitting.
-            double diagonal = Math.Sqrt((double)_videoWidth * _videoWidth + (double)_videoHeight * _videoHeight);
+            double diagonal = Math.Sqrt((double)_previewWidth * _previewWidth + (double)_previewHeight * _previewHeight);
             double scale = Math.Min(VideoSurface.ActualWidth / diagonal, VideoSurface.ActualHeight / diagonal);
-            VideoFrame.Width = _videoWidth * scale;
-            VideoFrame.Height = _videoHeight * scale;
+            VideoFrame.Width = _previewWidth * scale;
+            VideoFrame.Height = _previewHeight * scale;
             RotatingFrame.Width = VideoFrame.Width;
             RotatingFrame.Height = VideoFrame.Height;
         }
@@ -604,7 +800,6 @@ namespace WpfWebView2Poc
                 _vlcPlayer.Dispose();
                 _vlcPlayer = null;
             }
-            VlcVideoView.Dispose();
             _libVlc?.Dispose();
             _libVlc = null;
             base.OnClosed(e);
