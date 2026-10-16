@@ -40,6 +40,7 @@ namespace WpfWebView2Poc
         private int _previewHeight;
         private string? _selectedVideoPath;
         private string? _overlayImagePath;
+        private TaskCompletionSource<bool>? _vlcFirstFrameReady;
 
         public MainWindow()
         {
@@ -101,6 +102,7 @@ namespace WpfWebView2Poc
             EmptyStateText.Visibility = Visibility.Visible;
             RotatingFrame.Visibility = Visibility.Collapsed;
             StopPlayback();
+            _vlcFirstFrameReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             StartVlcVideo();
 
             var cancellation = new CancellationTokenSource();
@@ -167,6 +169,7 @@ namespace WpfWebView2Poc
                 using var media = new Media(_libVlc, new Uri(_selectedVideoPath));
                 media.AddOption(":no-audio");
                 media.AddOption(":avcodec-hw=none");
+                media.AddOption(":input-repeat=65535");
                 if (!_vlcPlayer.Play(media))
                     throw new InvalidOperationException("VLC did not start playback.");
 
@@ -220,6 +223,7 @@ namespace WpfWebView2Poc
                 _audioPlayer.Stop();
                 using var media = new Media(_libVlc, new Uri(videoPath));
                 media.AddOption(":no-video");
+                media.AddOption(":input-repeat=65535");
                 if (!_audioPlayer.Play(media))
                     throw new InvalidOperationException("VLC audio playback did not start.");
                 AudioStatusText.Text = "Audio playing";
@@ -252,17 +256,36 @@ namespace WpfWebView2Poc
             _frameBitmap = new WriteableBitmap(_videoWidth, _videoHeight, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
             byte[] frame = new byte[frameBytes];
 
+            // Decode FFmpeg's first frame up front so both panes have content ready before either
+            // is shown. This is half of the start barrier: FFmpeg is ready here, VLC is awaited below.
+            bool hasFirstFrame = await Task.Run(() => decoder.TryReadFrame(frame), cancellationToken);
+
             await Dispatcher.InvokeAsync(() =>
             {
                 VideoFrame.Source = _frameBitmap;
+                if (hasFirstFrame)
+                    _frameBitmap.WritePixels(new Int32Rect(0, 0, _videoWidth, _videoHeight), frame, stride, 0);
                 _syncingPreviewSize = true;
                 WidthInput.Text = _previewWidth.ToString();
                 HeightInput.Text = _previewHeight.ToString();
                 _syncingPreviewSize = false;
-                EmptyStateText.Visibility = Visibility.Collapsed;
-                RotatingFrame.Visibility = Visibility.Visible;
                 UpdateFrameLayout();
                 UpdateVlcLayout();
+            });
+
+            // Second half of the barrier: wait until VLC has delivered its first frame too, so both
+            // pipelines reveal and begin advancing together. Bounded so a VLC failure cannot hang
+            // the FFmpeg pane indefinitely.
+            if (_vlcFirstFrameReady is not null)
+            {
+                var ready = _vlcFirstFrameReady.Task;
+                await Task.WhenAny(ready, Task.Delay(3000, cancellationToken));
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                EmptyStateText.Visibility = Visibility.Collapsed;
+                RotatingFrame.Visibility = Visibility.Visible;
             });
 
             StartAudio(videoPath);
@@ -442,6 +465,7 @@ namespace WpfWebView2Poc
 
                     _vlcFrameBitmap.WritePixels(new Int32Rect(0, 0, _vlcVideoWidth, _vlcVideoHeight), _vlcFrameBuffer, _vlcVideoPitch, 0);
                 }
+                _vlcFirstFrameReady?.TrySetResult(true);
             }
             catch (Exception ex)
             {
@@ -525,6 +549,7 @@ namespace WpfWebView2Poc
             _playbackCancellation?.Cancel();
             _playbackCancellation?.Dispose();
             _playbackCancellation = null;
+            _vlcFirstFrameReady?.TrySetResult(false);
             StopAudio();
             _frameBitmap = null;
             VideoFrame.Source = null;
